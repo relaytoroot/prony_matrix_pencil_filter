@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prony-matrix-pencil-filter"
+version = "0.1.0"
+description = "Prototype for detecting and removing damped oscillations after frequency/power step tests."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Yunus Sevgi" }
+]
+dependencies = [
+  "numpy>=1.24",
+  "scipy>=1.10",
+  "pandas>=2.0",
+  "matplotlib>=3.7",
+  "openpyxl>=3.1",
+  "xlrd>=2.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0"
+]
+
+[project.scripts]
+prony-filter = "prony_filter.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
