@@ -63,7 +63,8 @@ def matrix_pencil(
         raise ValueError("model_order must be at least 1")
 
     n_samples = len(y)
-    l_value = pencil_parameter or n_samples // 2
+    default_pencil = min(n_samples // 2, max(model_order * 8, 256))
+    l_value = pencil_parameter or default_pencil
     l_value = int(np.clip(l_value, model_order + 1, n_samples - 2))
     rows = n_samples - l_value
     if rows <= model_order:
@@ -137,4 +138,3 @@ def _modes_from_poles(poles: np.ndarray, coefficients: np.ndarray, dt: float) ->
             )
         )
     return modes
-

@@ -58,7 +58,7 @@ prony_matrix_pencil_filter/
 ```powershell
 cd C:\Sevgi\projects\prony_matrix_pencil_filter
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .[dev]
+.\.venv\Scripts\python.exe -m pip install -e '.[dev]'
 ```
 
 In Git Bash:
@@ -69,19 +69,16 @@ python -m venv .venv
 ./.venv/Scripts/python.exe -m pip install -e ".[dev]"
 ```
 
-## Daten ablegen
+## Mitgelieferte Unterlagen
 
-Die mitgegebenen Unterlagen konnten beim Anlegen des Projekts lokal nicht automatisch gefunden werden. Lege die Dateien bei Bedarf hier ab:
+Die ZIP-Unterlagen liegen lokal unter `data/`. Dieser Ordner ist absichtlich in Git ignoriert, damit Messdaten und PDFs nicht versehentlich auf GitHub landen.
 
-```text
-data/
-  Aufgabe.txt
-  Pencil_Method.pdf
-  vde-fnn-hinweis-netzbildende-eigenschaftenv2-1_ah.pdf
-  Frequenz_Leistungs_Pendelung.XLS
-  Frequenz_Leistungs_Pendelung_negativer_Sprung.XLS
-  Python Implementierung.url
-```
+Erkannte XLS-Struktur:
+
+- `Frequenz_Leistungs_Pendelung.XLS`
+- `Frequenz_Leistungs_Pendelung_negativer_Sprung.XLS`
+- Frequenzsignal: Zeitspalte `Unnamed: 0`, Signalspalte `f`
+- Leistungssignal: Zeitspalte `Unnamed: 2`, Signalspalte `P_pos`
 
 ## Spalten anzeigen
 
@@ -91,24 +88,30 @@ data/
 
 ## Analyse ausführen
 
-```powershell
-.\.venv\Scripts\python.exe -m prony_filter.cli --file data\Frequenz_Leistungs_Pendelung.XLS --t0 1.0 --remove 1.8 3.2 --tol 0.2 --order 12 --output-dir outputs
-```
-
-Optional mit expliziten Spalten:
+Frequenzsignal analysieren:
 
 ```powershell
-.\.venv\Scripts\python.exe -m prony_filter.cli --file data\Frequenz_Leistungs_Pendelung.XLS --time-column Zeit --signal-column Wirkleistung --t0 1.0 --remove 1.8 3.2 --tol 0.2 --order 12
+.\.venv\Scripts\python.exe -m prony_filter.cli --file data\Frequenz_Leistungs_Pendelung.XLS --time-column "Unnamed: 0" --signal-column f --t0 1.0 --remove 1.8 3.2 --tol 0.2 --order 12 --pencil 256 --output-dir outputs\frequenz_pos --no-excel
 ```
+
+Leistungssignal analysieren:
+
+```powershell
+.\.venv\Scripts\python.exe -m prony_filter.cli --file data\Frequenz_Leistungs_Pendelung.XLS --signal-column P_pos --t0 1.0 --remove 1.8 3.2 --tol 0.2 --order 12 --pencil 256 --output-dir outputs\leistung_pos --no-excel
+```
+
+Wenn `--signal-column P_pos` gewählt wird, erkennt der Import automatisch die direkt links stehende Zeitspalte `Unnamed: 2`.
+
+`--pencil 256` hält die Matrix-Pencil-Rechnung bei großen Messdateien handlich. Ohne Angabe nutzt das Tool ebenfalls einen begrenzten, sicheren Default.
 
 ## Output
 
-Der CLI-Lauf erzeugt:
+Der CLI-Lauf erzeugt im gewählten Output-Ordner:
 
-- `filtered_signal.csv`
-- `modes.csv`
-- `comparison_plot.png`
-- optional `results.xlsx`
+- `filtered_signal.csv`: Originalsignal, gefiltertes Signal und entfernte Komponente.
+- `modes.csv`: erkannte Moden mit Frequenz, Dämpfung, Amplitude, Phase und Entfernt-Markierung.
+- `comparison_plot.png`: Originalsignal gegen bereinigtes Signal.
+- `results.xlsx`: optionaler Excel-Export, wenn `--no-excel` nicht gesetzt ist.
 
 Die Modentabelle enthält:
 
@@ -118,10 +121,16 @@ Die Modentabelle enthält:
 - Phase
 - entfernt ja/nein
 
+## Tests und Beispiel
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe examples\run_example.py
+```
+
 ## Grenzen des Prototyps
 
 - Die Modellordnung muss fachlich plausibel gewählt werden.
-- Stark verrauschte oder nicht gleichmäßig abgetastete Daten müssen vorher geprüft werden.
-- Aktuell wird bei ungleichmäßiger Abtastung auf ein gleichmäßiges Raster interpoliert.
-- Die Amplitude wird aus komplexen Exponentialkoeffizienten abgeleitet und ist als technische Kenngröße zu verstehen.
-
+- `t0` muss zum Sprungtest passen, sonst werden falsche Signalanteile geschätzt.
+- Ungleichmäßig abgetastete Daten werden intern auf ein gleichmäßiges Raster interpoliert.
+- Der Prototyp ist ein technischer Startpunkt und noch kein Zertifizierungstool.

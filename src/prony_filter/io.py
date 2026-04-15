@@ -54,6 +54,8 @@ def extract_time_signal(
     time_column: str | None = None,
     signal_column: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray, str, str]:
+    if time_column is None and signal_column is not None:
+        time_column = guess_time_column_for_signal(frame, signal_column)
     if time_column is None or signal_column is None:
         guessed_time, guessed_signal = guess_time_signal_columns(frame)
         time_column = time_column or guessed_time
@@ -61,6 +63,28 @@ def extract_time_signal(
     time_values = pd.to_numeric(frame[time_column], errors="coerce").to_numpy(dtype=float)
     signal_values = pd.to_numeric(frame[signal_column], errors="coerce").to_numpy(dtype=float)
     return time_values, signal_values, time_column, signal_column
+
+
+def guess_time_column_for_signal(frame: pd.DataFrame, signal_column: str) -> str:
+    """Guess the matching time column for a selected signal column.
+
+    Some exported XLS files contain multiple time/signal pairs, for example
+    ``Unnamed: 0`` + ``f`` and ``Unnamed: 2`` + ``P_pos``. In that layout the
+    most useful default is the numeric column immediately left of the selected
+    signal.
+    """
+    columns = [str(column) for column in frame.columns]
+    if signal_column not in columns:
+        raise KeyError(f"Unknown signal column: {signal_column}")
+    signal_index = columns.index(signal_column)
+    numeric = set(numeric_columns(frame))
+
+    for candidate in reversed(columns[:signal_index]):
+        if candidate in numeric and _looks_like_time_column(frame[candidate]):
+            return candidate
+
+    guessed_time, _ = guess_time_signal_columns(frame)
+    return guessed_time
 
 
 def export_results(result: FilterResult, output_dir: str | Path, write_excel: bool = True) -> dict[str, Path]:
@@ -98,3 +122,15 @@ def _find_by_keywords(columns: Iterable[str], keywords: tuple[str, ...]) -> str 
             return column
     return None
 
+
+def _looks_like_time_column(series: pd.Series) -> bool:
+    values = pd.to_numeric(series, errors="coerce").dropna().to_numpy(dtype=float)
+    if len(values) < 3:
+        return False
+    diffs = np.diff(values)
+    if np.any(diffs <= 0):
+        return False
+    median_dt = float(np.median(diffs))
+    if median_dt <= 0:
+        return False
+    return bool(np.allclose(diffs, median_dt, rtol=1e-2, atol=max(1e-12, median_dt * 1e-4)))

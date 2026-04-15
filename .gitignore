@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 .pytest_cache/
+pytest-cache-files-*/
 .mypy_cache/
 .ruff_cache/
 .venv/
@@ -18,4 +19,3 @@ outputs/*
 
 # Notebook checkpoints
 .ipynb_checkpoints/
-

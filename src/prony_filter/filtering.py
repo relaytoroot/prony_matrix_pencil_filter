@@ -30,6 +30,7 @@ def filter_known_modes(
     tolerance_hz: float = 0.2,
     model_order: int = 12,
     detrend: str = "constant",
+    pencil_parameter: int | None = None,
 ) -> FilterResult:
     time_array, value_array = _prepare_time_series(time, values)
     segment_mask = time_array >= t0
@@ -43,7 +44,12 @@ def filter_known_modes(
 
     baseline = _baseline(uniform_values, detrend)
     residual = uniform_values - baseline
-    analysis = matrix_pencil(residual, dt=dt, model_order=model_order)
+    analysis = matrix_pencil(
+        residual,
+        dt=dt,
+        model_order=model_order,
+        pencil_parameter=pencil_parameter,
+    )
 
     remove_indices = _matching_mode_indices(analysis.modes, remove_frequencies_hz or [], tolerance_hz)
     poles = np.array([mode.pole for mode in analysis.modes], dtype=complex)
@@ -133,4 +139,3 @@ def _matching_mode_indices(modes: list[Mode], targets: Iterable[float], toleranc
         if any(abs(mode.frequency_hz - target) <= tolerance_hz for target in target_values):
             indices.append(mode.index)
     return indices
-

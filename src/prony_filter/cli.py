@@ -22,6 +22,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tol", type=float, default=0.2, help="Frequency tolerance in Hz")
     parser.add_argument("--order", type=int, default=12, help="Matrix-Pencil model order")
     parser.add_argument(
+        "--pencil",
+        type=int,
+        help="Optional Matrix-Pencil parameter. Smaller values are faster for large measurements.",
+    )
+    parser.add_argument(
         "--detrend",
         choices=("none", "constant", "linear"),
         default="constant",
@@ -63,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         tolerance_hz=args.tol,
         model_order=args.order,
         detrend=args.detrend,
+        pencil_parameter=args.pencil,
     )
     output_dir = Path(args.output_dir)
     written = export_results(result, output_dir=output_dir, write_excel=not args.no_excel)
@@ -90,4 +96,3 @@ def _parse_sheet(raw_sheet: str) -> str | int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
