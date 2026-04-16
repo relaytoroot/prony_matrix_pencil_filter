@@ -7,6 +7,7 @@ import numpy as np
 from scipy import signal as scipy_signal
 
 from .matrix_pencil import MatrixPencilResult, Mode, estimate_coefficients, matrix_pencil, reconstruct_from_poles
+from .resonance import ResonanceBand, annotate_modes_for_resonance_bands, build_resonance_bands
 
 
 @dataclass(slots=True)
@@ -18,8 +19,13 @@ class FilterResult:
     segment_time: np.ndarray
     segment_original: np.ndarray
     segment_filtered: np.ndarray
+    uniform_time: np.ndarray
+    uniform_values: np.ndarray
+    baseline: np.ndarray
+    residual: np.ndarray
     modes: list[Mode]
     analysis: MatrixPencilResult
+    selection_bands: list[ResonanceBand]
 
 
 def filter_known_modes(
@@ -28,6 +34,8 @@ def filter_known_modes(
     t0: float,
     remove_frequencies_hz: Iterable[float] | None = None,
     tolerance_hz: float = 0.2,
+    relative_tolerance: float | None = None,
+    remove_bands_hz: Iterable[tuple[float, float]] | None = None,
     model_order: int = 12,
     detrend: str = "constant",
     pencil_parameter: int | None = None,
@@ -51,7 +59,14 @@ def filter_known_modes(
         pencil_parameter=pencil_parameter,
     )
 
-    remove_indices = _matching_mode_indices(analysis.modes, remove_frequencies_hz or [], tolerance_hz)
+    absolute_tolerance = None if relative_tolerance is not None else tolerance_hz
+    selection_bands = build_resonance_bands(
+        remove_frequencies_hz=remove_frequencies_hz,
+        tolerance_hz=absolute_tolerance,
+        relative_tolerance=relative_tolerance,
+        remove_bands_hz=remove_bands_hz,
+    )
+    remove_indices = annotate_modes_for_resonance_bands(analysis.modes, selection_bands)
     poles = np.array([mode.pole for mode in analysis.modes], dtype=complex)
     coefficients = estimate_coefficients(residual, poles)
     removed_component_uniform = np.zeros_like(uniform_values, dtype=float)
@@ -64,13 +79,13 @@ def filter_known_modes(
             len(uniform_values),
         ).real
 
-    for mode in analysis.modes:
-        mode.removed = mode.index in remove_indices
-
     filtered_uniform = uniform_values - removed_component_uniform
-    segment_filtered = np.interp(segment_time, uniform_time, filtered_uniform)
+    # uniform_time is normalized to the segment start, so interpolate on the
+    # same relative axis when mapping results back to the original timestamps.
+    segment_time_relative = segment_time - segment_time[0]
+    segment_filtered = np.interp(segment_time_relative, uniform_time, filtered_uniform)
     removed_component = np.zeros_like(value_array, dtype=float)
-    removed_component[segment_mask] = np.interp(segment_time, uniform_time, removed_component_uniform)
+    removed_component[segment_mask] = np.interp(segment_time_relative, uniform_time, removed_component_uniform)
     filtered = value_array.copy()
     filtered[segment_mask] = segment_filtered
 
@@ -82,8 +97,13 @@ def filter_known_modes(
         segment_time=segment_time,
         segment_original=segment_values,
         segment_filtered=segment_filtered,
+        uniform_time=uniform_time,
+        uniform_values=uniform_values,
+        baseline=baseline,
+        residual=residual,
         modes=analysis.modes,
         analysis=analysis,
+        selection_bands=selection_bands,
     )
 
 
@@ -126,16 +146,3 @@ def _baseline(values: np.ndarray, detrend: str) -> np.ndarray:
     if detrend == "linear":
         return values - scipy_signal.detrend(values, type="linear")
     raise ValueError("detrend must be one of: none, constant, linear")
-
-
-def _matching_mode_indices(modes: list[Mode], targets: Iterable[float], tolerance_hz: float) -> list[int]:
-    if tolerance_hz < 0:
-        raise ValueError("tolerance_hz must be non-negative")
-    target_values = [abs(float(target)) for target in targets]
-    if not target_values:
-        return []
-    indices: list[int] = []
-    for mode in modes:
-        if any(abs(mode.frequency_hz - target) <= tolerance_hz for target in target_values):
-            indices.append(mode.index)
-    return indices

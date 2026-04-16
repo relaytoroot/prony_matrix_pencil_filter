@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 import numpy as np
 import pandas as pd
 
 from .filtering import FilterResult
+
+if TYPE_CHECKING:
+    from .spectral import FFTSpectrumResult
 
 
 TIME_KEYWORDS = ("time", "zeit", "t ", "t[s]", "t_s", "seconds", "sec")
@@ -87,10 +90,8 @@ def guess_time_column_for_signal(frame: pd.DataFrame, signal_column: str) -> str
     return guessed_time
 
 
-def export_results(result: FilterResult, output_dir: str | Path, write_excel: bool = True) -> dict[str, Path]:
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    signal_frame = pd.DataFrame(
+def build_signal_frame(result: FilterResult) -> pd.DataFrame:
+    return pd.DataFrame(
         {
             "time": result.time,
             "original": result.original,
@@ -98,7 +99,28 @@ def export_results(result: FilterResult, output_dir: str | Path, write_excel: bo
             "removed_component": result.removed_component,
         }
     )
-    modes_frame = pd.DataFrame(result.analysis.as_table())
+
+
+def build_modes_frame(result: FilterResult) -> pd.DataFrame:
+    return pd.DataFrame(result.analysis.as_table())
+
+
+def export_results(
+    result: FilterResult,
+    output_dir: str | Path,
+    write_excel: bool = True,
+    fft_result: FFTSpectrumResult | None = None,
+    resonance_comparison_rows: Iterable[dict[str, object]] | None = None,
+) -> dict[str, Path]:
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    signal_frame = build_signal_frame(result)
+    modes_frame = build_modes_frame(result)
+    fft_spectrum_frame = None if fft_result is None else pd.DataFrame(fft_result.spectrum_table())
+    fft_peaks_frame = None if fft_result is None else pd.DataFrame(fft_result.peaks_table())
+    comparison_frame = None
+    if resonance_comparison_rows is not None:
+        comparison_frame = pd.DataFrame(list(resonance_comparison_rows))
 
     written = {
         "filtered_csv": output_path / "filtered_signal.csv",
@@ -106,11 +128,26 @@ def export_results(result: FilterResult, output_dir: str | Path, write_excel: bo
     }
     signal_frame.to_csv(written["filtered_csv"], index=False)
     modes_frame.to_csv(written["modes_csv"], index=False)
+    if fft_spectrum_frame is not None:
+        written["fft_spectrum_csv"] = output_path / "fft_spectrum.csv"
+        fft_spectrum_frame.to_csv(written["fft_spectrum_csv"], index=False)
+    if fft_peaks_frame is not None:
+        written["fft_peaks_csv"] = output_path / "fft_peaks.csv"
+        fft_peaks_frame.to_csv(written["fft_peaks_csv"], index=False)
+    if comparison_frame is not None:
+        written["resonance_comparison_csv"] = output_path / "resonance_comparison.csv"
+        comparison_frame.to_csv(written["resonance_comparison_csv"], index=False)
     if write_excel:
         excel_path = output_path / "results.xlsx"
         with pd.ExcelWriter(excel_path) as writer:
             signal_frame.to_excel(writer, sheet_name="filtered_signal", index=False)
             modes_frame.to_excel(writer, sheet_name="modes", index=False)
+            if fft_spectrum_frame is not None:
+                fft_spectrum_frame.to_excel(writer, sheet_name="fft_spectrum", index=False)
+            if fft_peaks_frame is not None:
+                fft_peaks_frame.to_excel(writer, sheet_name="fft_peaks", index=False)
+            if comparison_frame is not None:
+                comparison_frame.to_excel(writer, sheet_name="resonance_comparison", index=False)
         written["excel"] = excel_path
     return written
 

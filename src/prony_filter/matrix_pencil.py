@@ -14,6 +14,11 @@ class Mode:
     damping: float
     amplitude: float
     phase_rad: float
+    target_frequency_hz: float | None = None
+    band_low_hz: float | None = None
+    band_high_hz: float | None = None
+    distance_to_target_hz: float | None = None
+    selection_reason: str = ""
     removed: bool = False
 
 
@@ -32,6 +37,11 @@ class MatrixPencilResult:
                 "damping": mode.damping,
                 "amplitude": mode.amplitude,
                 "phase_rad": mode.phase_rad,
+                "target_frequency_hz": mode.target_frequency_hz,
+                "band_low_hz": mode.band_low_hz,
+                "band_high_hz": mode.band_high_hz,
+                "distance_to_target_hz": mode.distance_to_target_hz,
+                "selection_reason": mode.selection_reason,
                 "removed": mode.removed,
             }
             for mode in self.modes

@@ -29,3 +29,26 @@ def test_filter_known_modes_reduces_target_oscillation() -> None:
     assert filtered_energy < original_energy * 0.75
     assert any(mode.removed for mode in result.modes)
 
+
+def test_filter_known_modes_without_matching_targets_keeps_signal_for_offset_time_axis() -> None:
+    dt = 0.01
+    time = np.arange(10, 18, dt)
+    step_time = 11.0
+    response_time = np.maximum(0.0, time - step_time)
+    values = 4.0 + np.where(
+        time >= step_time,
+        0.8 * np.exp(-0.4 * response_time) * np.cos(2 * np.pi * 1.5 * response_time),
+        0.0,
+    )
+
+    result = filter_known_modes(
+        time=time,
+        values=values,
+        t0=step_time,
+        remove_frequencies_hz=[],
+        tolerance_hz=0.1,
+        model_order=6,
+    )
+
+    assert np.allclose(result.filtered, values)
+    assert np.allclose(result.removed_component, 0.0)
