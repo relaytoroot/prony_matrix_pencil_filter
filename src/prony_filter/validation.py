@@ -74,6 +74,7 @@ def generate_validation_report(
     stability_orders: list[int] | None = None,
     stability_t0_values: list[float] | None = None,
     stability_windows_s: list[float] | None = None,
+    debug: bool = False,
 ) -> Path:
     report_dir = Path(output_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -92,8 +93,9 @@ def generate_validation_report(
 
     clean_result.modes_frame.to_csv(report_dir / "synthetic_clean_modes.csv", index=False)
     noisy_result.modes_frame.to_csv(report_dir / "synthetic_noisy_modes.csv", index=False)
-    _save_synthetic_plot(clean_result, report_dir / "synthetic_clean_plot.png")
-    _save_synthetic_plot(noisy_result, report_dir / "synthetic_noisy_plot.png")
+    if debug:
+        _save_synthetic_plot(clean_result, report_dir / "synthetic_clean_plot.png")
+        _save_synthetic_plot(noisy_result, report_dir / "synthetic_noisy_plot.png")
 
     frame = read_table(file_path, sheet_name=sheet_name)
     time, values, used_time_column, used_signal_column = extract_time_signal(
@@ -112,12 +114,13 @@ def generate_validation_report(
         pencil_parameter=pencil_parameter,
     )
 
-    real_result.modes_frame.to_csv(report_dir / "real_modes.csv", index=False)
     real_result.modes_in_band_frame.to_csv(report_dir / "real_modes_in_band.csv", index=False)
-    pd.DataFrame(real_result.fft_result.spectrum_table()).to_csv(report_dir / "real_fft_spectrum.csv", index=False)
-    save_fft_plot(real_result.fft_result, report_dir / "real_fft_plot.png", title="Real data FFT spectrum")
     real_result.fft_peaks_frame.to_csv(report_dir / "real_fft_peaks.csv", index=False)
     real_result.comparison_frame.to_csv(report_dir / "real_resonance_comparison.csv", index=False)
+    if debug:
+        real_result.modes_frame.to_csv(report_dir / "real_modes.csv", index=False)
+        pd.DataFrame(real_result.fft_result.spectrum_table()).to_csv(report_dir / "real_fft_spectrum.csv", index=False)
+        save_fft_plot(real_result.fft_result, report_dir / "real_fft_plot.png", title="Real data FFT spectrum")
 
     stability_orders = stability_orders or [8, 10, 12, 14, 16]
     stability_t0_values = stability_t0_values or [0.98, 1.00, 1.02]
@@ -378,6 +381,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Baseline/trend handling before modal estimation",
     )
     parser.add_argument("--output-dir", default="validation_report", help="Directory for the generated validation report")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Write additional diagnostic plots and full-spectrum exports",
+    )
     parser.add_argument("--orders", nargs="*", type=int, default=[8, 10, 12, 14, 16], help="Orders for the stability scan")
     parser.add_argument(
         "--stability-t0",
@@ -414,6 +422,7 @@ def main(argv: list[str] | None = None) -> int:
         stability_orders=args.orders,
         stability_t0_values=args.stability_t0,
         stability_windows_s=args.stability_windows,
+        debug=args.debug,
     )
     print(f"Validation report written to {output_dir}")
     return 0

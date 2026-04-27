@@ -193,16 +193,15 @@ Fuer die fachliche Validierung gibt es jetzt einen eigenen Report-Lauf. Er erzeu
 Der Ordner `validation_report/` enthaelt unter anderem:
 
 - `synthetic_clean_modes.csv`
-- `synthetic_clean_plot.png`
 - `synthetic_noisy_modes.csv`
-- `synthetic_noisy_plot.png`
-- `real_fft_spectrum.csv`
-- `real_fft_plot.png`
-- `real_modes.csv`
+- `real_fft_peaks.csv`
 - `real_modes_in_band.csv`
+- `real_resonance_comparison.csv`
 - `stability_report.csv`
 - `stability_summary.md`
 - `summary.md`
+
+Mit `--debug` werden zusaetzlich die grossen Diagnoseartefakte wie synthetische Plot-PNGs, `real_modes.csv`, `real_fft_spectrum.csv` und `real_fft_plot.png` geschrieben.
 
 Interpretation:
 

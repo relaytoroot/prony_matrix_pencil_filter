@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from uuid import uuid4
 from pathlib import Path
 
 import numpy as np
@@ -48,7 +47,7 @@ def test_export_results_default_writes_only_result_xlsx() -> None:
         fft_result=fft_result,
         resonance_comparison_rows=resonance_comparison,
     )
-    output_dir = Path("test_artifacts") / f"default_export_{uuid4().hex}"
+    output_dir = Path("test_artifacts") / "default_export"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     written = export_results(
