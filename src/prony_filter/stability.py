@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .filtering import filter_known_modes
+from .resonance import modes_in_resonance_bands
 
 
 def run_stability_scan(
@@ -51,7 +52,9 @@ def run_stability_scan(
                         pencil_parameter=pencil_parameter,
                     )
                     representative_mode = _representative_mode(result.analysis.modes)
-                    modes_in_band = [mode for mode in result.analysis.modes if mode.removed]
+                    band_modes = modes_in_resonance_bands(result.analysis.modes, result.selection_bands)
+                    band_frequencies = "; ".join(f"{mode.frequency_hz:.6f}" for mode in band_modes)
+                    band_dampings = "; ".join(f"{mode.damping:.6f}" for mode in band_modes)
 
                     rows.append(
                         {
@@ -59,7 +62,9 @@ def run_stability_scan(
                             "t0_s": current_t0,
                             "t0_offset_s": t0_offset_s,
                             "window_length_s": window_length_s,
-                            "band_match_count": len(modes_in_band),
+                            "band_match_count": len(band_modes),
+                            "band_mode_frequencies_hz": band_frequencies,
+                            "band_mode_dampings": band_dampings,
                             "representative_mode_index": None if representative_mode is None else representative_mode.index,
                             "representative_mode_frequency_hz": None
                             if representative_mode is None
@@ -143,3 +148,71 @@ def _distance_to_band(frequency_hz: float, low_hz: float | None, high_hz: float 
     if low_hz <= frequency <= high_hz:
         return 0.0
     return min(abs(frequency - low_hz), abs(frequency - high_hz))
+
+
+def build_stability_summary_markdown(result_frame: pd.DataFrame) -> str:
+    total_runs = len(result_frame)
+    successful = result_frame[(result_frame["error"] == "") & (result_frame["band_match_count"] > 0)]
+    failed = result_frame[result_frame["error"] != ""]
+    missing_band_match = result_frame[(result_frame["error"] == "") & (result_frame["band_match_count"] == 0)]
+
+    lines = [
+        "# Stability Summary",
+        "",
+        f"- Analysed configurations: {total_runs}",
+        f"- Configurations with at least one mode in the resonance band: {len(successful)}",
+        f"- Configurations without a band match: {len(missing_band_match)}",
+        f"- Configurations that failed before estimation: {len(failed)}",
+        "",
+    ]
+
+    if not successful.empty:
+        frequencies = successful["representative_mode_frequency_hz"].dropna().astype(float)
+        dampings = successful["representative_mode_damping"].dropna().astype(float)
+        lines.extend(
+            [
+                "## Representative band mode statistics",
+                "",
+                f"- Frequency mean: {frequencies.mean():.6f} Hz",
+                f"- Frequency min/max: {frequencies.min():.6f} / {frequencies.max():.6f} Hz",
+                f"- Frequency std: {frequencies.std(ddof=0):.6f} Hz",
+                f"- Damping mean: {dampings.mean():.6f} 1/s",
+                f"- Damping min/max: {dampings.min():.6f} / {dampings.max():.6f} 1/s",
+                "",
+                "## Successful configurations",
+                "",
+            ]
+        )
+        lines.append("| order | t0 [s] | window [s] | representative frequency [Hz] | band frequencies [Hz] |")
+        lines.append("| --- | ---: | ---: | ---: | --- |")
+        for row in successful.itertuples(index=False):
+            window_value = "full" if pd.isna(row.window_length_s) else f"{float(row.window_length_s):.2f}"
+            lines.append(
+                f"| {int(row.model_order)} | {float(row.t0_s):.2f} | {window_value} | "
+                f"{float(row.representative_mode_frequency_hz):.6f} | {row.band_mode_frequencies_hz or '-'} |"
+            )
+        lines.append("")
+
+    if not missing_band_match.empty:
+        lines.extend(["## Configurations without a band match", ""])
+        lines.append("| order | t0 [s] | window [s] | closest mode [Hz] | reason |")
+        lines.append("| --- | ---: | ---: | ---: | --- |")
+        for row in missing_band_match.itertuples(index=False):
+            window_value = "full" if pd.isna(row.window_length_s) else f"{float(row.window_length_s):.2f}"
+            closest_value = "-" if pd.isna(row.representative_mode_frequency_hz) else f"{float(row.representative_mode_frequency_hz):.6f}"
+            lines.append(
+                f"| {int(row.model_order)} | {float(row.t0_s):.2f} | {window_value} | "
+                f"{closest_value} | {row.selection_reason or '-'} |"
+            )
+        lines.append("")
+
+    if not failed.empty:
+        lines.extend(["## Failed configurations", ""])
+        lines.append("| order | t0 [s] | window [s] | error |")
+        lines.append("| --- | ---: | ---: | --- |")
+        for row in failed.itertuples(index=False):
+            window_value = "full" if pd.isna(row.window_length_s) else f"{float(row.window_length_s):.2f}"
+            lines.append(f"| {int(row.model_order)} | {float(row.t0_s):.2f} | {window_value} | {row.error} |")
+        lines.append("")
+
+    return "\n".join(lines)

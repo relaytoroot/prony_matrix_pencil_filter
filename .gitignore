@@ -16,6 +16,8 @@ data/*
 !data/.gitkeep
 outputs/*
 !outputs/.gitkeep
+validation_report/
+test_artifacts/
 
 # Notebook checkpoints
 .ipynb_checkpoints/

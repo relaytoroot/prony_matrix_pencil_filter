@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from prony_filter.io import extract_time_signal, read_table
-from prony_filter.stability import run_stability_scan
+from prony_filter.stability import build_stability_summary_markdown, run_stability_scan
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,13 +37,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--t0-offsets",
         nargs="*",
         type=float,
-        default=[-0.02, -0.01, 0.0, 0.01, 0.02],
+        default=[-0.02, 0.0, 0.02],
         help="Offsets around t0 in seconds",
     )
     parser.add_argument(
         "--window-seconds",
         nargs="*",
         type=float,
+        default=[3.0, 5.0, 7.0],
         help="Optional analysis window lengths in seconds after each t0",
     )
     return parser
@@ -74,11 +75,14 @@ def main(argv: list[str] | None = None) -> int:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "scan_results.csv"
+    output_path = output_dir / "stability_report.csv"
+    summary_path = output_dir / "stability_summary.md"
     result_frame.to_csv(output_path, index=False)
+    summary_path.write_text(build_stability_summary_markdown(result_frame), encoding="utf-8")
 
     print(result_frame.to_string(index=False))
     print(f"\nWritten stability scan to {output_path}")
+    print(f"Written summary to {summary_path}")
     return 0
 
 

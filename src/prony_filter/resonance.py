@@ -137,6 +137,12 @@ def annotate_modes_for_resonance_bands(modes: list[Mode], bands: list[ResonanceB
     return removed_indices
 
 
+def modes_in_resonance_bands(modes: list[Mode], bands: list[ResonanceBand]) -> list[Mode]:
+    if not bands:
+        return []
+    return [mode for mode in modes if any(band.contains(mode.frequency_hz) for band in bands)]
+
+
 def _best_band_for_mode(
     frequency_hz: float,
     bands: list[ResonanceBand],

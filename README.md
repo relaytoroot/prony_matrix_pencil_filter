@@ -125,10 +125,10 @@ Erkannte XLS-Struktur:
 
 ## Analyse ausführen
 
-Leistungssignal mit relativer Resonanzband-Auswahl und FFT-Voranalyse:
+Leistungssignal mit relativer Resonanzband-Auswahl:
 
 ```powershell
-.\.venv\Scripts\python.exe -m prony_filter.cli --file data\Frequenz_Leistungs_Pendelung.XLS --signal-column P_pos --t0 1.0 --remove 2.2 --rel-tol 0.2 --order 12 --pencil 256 --fft --output-dir outputs\leistung_resonanzband --no-excel
+.\.venv\Scripts\python.exe -m prony_filter.cli --file data\Frequenz_Leistungs_Pendelung.XLS --signal-column P_pos --t0 1.0 --remove 2.2 --rel-tol 0.2 --order 12 --pencil 256 --output-dir outputs\leistung_resonanzband
 ```
 
 Leistungssignal mit explizitem Resonanzband:
@@ -137,33 +137,26 @@ Leistungssignal mit explizitem Resonanzband:
 .\.venv\Scripts\python.exe -m prony_filter.cli --file data\Frequenz_Leistungs_Pendelung.XLS --signal-column P_pos --t0 1.0 --remove-band 1.76 2.64 --order 12 --pencil 256 --output-dir outputs\leistung_band --no-excel
 ```
 
-Wenn `--signal-column P_pos` gewählt wird, erkennt der Import automatisch die direkt links stehende Zeitspalte `Unnamed: 2`.
+Standardmaessig wird fuer die fachliche Auswertung das Wirkleistungssignal `P_pos` verwendet. Dazu erkennt der Import automatisch die direkt links stehende Zeitspalte `Unnamed: 2`.
 
 `--pencil 256` hält die Matrix-Pencil-Rechnung bei großen Messdateien handlich. Ohne Angabe nutzt das Tool ebenfalls einen begrenzten, sicheren Default.
 
 ## Output
 
-Der CLI-Lauf erzeugt im gewählten Output-Ordner:
+Ein normaler CLI-Lauf erzeugt im gewählten Output-Ordner nur zwei Dateien:
 
-- `filtered_signal.csv`: Originalsignal, gefiltertes Signal und entfernte Komponente.
-- `modes.csv`: erkannte Moden mit Frequenz, Dämpfung, Amplitude, Phase, Resonanzband-Kontext und Entfernt-Markierung.
-- `comparison_plot.png`: Originalsignal gegen bereinigtes Signal.
-- `fft_spectrum.csv`: FFT-Spektrum des Analysefensters, wenn `--fft` gesetzt ist.
-- `fft_peaks.csv`: dominante FFT-Peaks mit Rang, Frequenz und Magnitude, wenn `--fft` gesetzt ist.
-- `fft_plot.png`: Plot des FFT-Spektrums, wenn `--fft` gesetzt ist.
-- `resonance_comparison.csv`: Gegenüberstellung von Resonanzband, FFT-Peak und Matrix-Pencil-Mode.
-- `results.xlsx`: optionaler Excel-Export, wenn `--no-excel` nicht gesetzt ist.
+- `result.xlsx`
+- `comparison_plot.png`
 
-`modes.csv` enthält jetzt zusätzlich diese Felder:
+`result.xlsx` enthält drei Sheets:
 
-- `target_frequency_hz`
-- `band_low_hz`
-- `band_high_hz`
-- `distance_to_target_hz`
-- `selection_reason`
-- `removed`
+- `Summary`: Eingabedatei, analysiertes Signal, Resonanzband, staerkster FFT-Peak im Band, ausgewaehlte Matrix-Pencil-Mode, Entscheidung und Warnungen
+- `Modes`: nur Moden im Resonanzband
+- `Signal`: `time`, `original`, `removed_component`, `filtered`
 
-Der fachliche Vergleich wird in `resonance_comparison.csv` dokumentiert. Eine typische Zeile beschreibt:
+Mit `--debug` werden zusaetzlich Diagnose-Dateien wie `filtered_signal.csv`, `modes.csv`, `fft_spectrum.csv`, `fft_peaks.csv`, `resonance_comparison.csv` und `fft_plot.png` erzeugt.
+
+Der fachliche Vergleich im Summary folgt weiterhin dieser Logik:
 
 ```text
 FFT-Peak: ca. 2.24 Hz
@@ -187,7 +180,34 @@ Das Skript testet standardmäßig:
 - `t0`-Variationen von `-0.02 s` bis `+0.02 s`
 - optional auch verschiedene Analysefenster über `--window-seconds`
 
-Die Ergebnisse landen in `scan_results.csv`.
+Die Ergebnisse landen in `stability_report.csv` und `stability_summary.md`.
+
+## Validierung
+
+Fuer die fachliche Validierung gibt es jetzt einen eigenen Report-Lauf. Er erzeugt synthetische Referenztests, den FFT-vs-Matrix-Pencil-Vergleich auf demselben Signalabschnitt und einen Stabilitaetsscan in einem gemeinsamen Ordner:
+
+```powershell
+.\.venv\Scripts\python.exe -m prony_filter.validation --file data\Frequenz_Leistungs_Pendelung.XLS --signal-column P_pos --t0 1.0
+```
+
+Der Ordner `validation_report/` enthaelt unter anderem:
+
+- `synthetic_clean_modes.csv`
+- `synthetic_clean_plot.png`
+- `synthetic_noisy_modes.csv`
+- `synthetic_noisy_plot.png`
+- `real_fft_spectrum.csv`
+- `real_fft_plot.png`
+- `real_modes.csv`
+- `real_modes_in_band.csv`
+- `stability_report.csv`
+- `stability_summary.md`
+- `summary.md`
+
+Interpretation:
+
+- Reines synthetisches Einzelsignal: Matrix Pencil sollte die vorgegebene Frequenz direkt wiederfinden.
+- Simulierte oder echt gemessene Sprungantwort: FFT-Peak und Matrix-Pencil-Mode koennen voneinander abweichen, weil Sprunganteil, Daempfung, Offset, weitere Moden, Fensterwahl und Modellordnung eine Rolle spielen.
 
 ## Tests und Beispiele
 
@@ -195,6 +215,7 @@ Die Ergebnisse landen in `scan_results.csv`.
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe examples\run_example.py
 .\.venv\Scripts\python.exe examples\stability_scan.py --file data\Frequenz_Leistungs_Pendelung.XLS --signal-column P_pos --t0 1.0
+.\.venv\Scripts\python.exe -m prony_filter.validation --file data\Frequenz_Leistungs_Pendelung.XLS --signal-column P_pos --t0 1.0
 ```
 
 ## Grenzen des Prototyps

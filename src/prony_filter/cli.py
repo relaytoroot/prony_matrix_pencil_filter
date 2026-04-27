@@ -3,10 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import pandas as pd
-
 from .filtering import filter_known_modes
-from .io import build_modes_frame, export_results, extract_time_signal, list_columns, read_table
+from .io import build_report_tables, export_results, extract_time_signal, list_columns, read_table
 from .plotting import save_comparison_plot, save_fft_plot
 from .spectral import analyze_fft_spectrum, build_resonance_comparison_rows
 
@@ -17,7 +15,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sheet", default=0, help="Excel sheet name or index. Default: 0")
     parser.add_argument("--list-columns", action="store_true", help="Only list available columns and exit")
     parser.add_argument("--time-column", help="Name of the time column")
-    parser.add_argument("--signal-column", help="Name of the signal column")
+    parser.add_argument(
+        "--signal-column",
+        default="P_pos",
+        help="Name of the signal column. Default: P_pos",
+    )
     parser.add_argument("--t0", type=float, help="Step time. Samples before this time are left unchanged")
     parser.add_argument("--remove", nargs="*", type=float, default=[], help="Known resonance frequencies to remove in Hz")
     parser.add_argument(
@@ -46,9 +48,22 @@ def build_parser() -> argparse.ArgumentParser:
         default="constant",
         help="Baseline/trend handling before modal estimation",
     )
-    parser.add_argument("--output-dir", default="outputs", help="Directory for CSV/Excel/plot outputs")
-    parser.add_argument("--no-excel", action="store_true", help="Do not write results.xlsx")
-    parser.add_argument("--fft", action="store_true", help="Also compute and export an FFT preview for the analysis segment")
+    parser.add_argument(
+        "--output-dir",
+        default="outputs",
+        help="Directory for result.xlsx, comparison_plot.png and optional debug files",
+    )
+    parser.add_argument("--no-excel", action="store_true", help="Do not write result.xlsx")
+    parser.add_argument(
+        "--fft",
+        action="store_true",
+        help="Kept for compatibility. FFT summary is computed automatically.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Write additional debug files such as CSV exports and FFT plots",
+    )
     return parser
 
 
@@ -94,54 +109,79 @@ def main(argv: list[str] | None = None) -> int:
         pencil_parameter=args.pencil,
     )
     output_dir = Path(args.output_dir)
-    fft_result = None
+    fft_result = analyze_fft_spectrum(result.residual, dt=result.analysis.dt, peak_count=50)
     resonance_comparison_rows = None
-    if args.fft:
-        fft_result = analyze_fft_spectrum(result.residual, dt=result.analysis.dt)
-        if result.selection_bands:
-            resonance_comparison_rows = build_resonance_comparison_rows(
-                result.selection_bands,
-                result.analysis.modes,
-                fft_result,
-            )
+    if result.selection_bands:
+        resonance_comparison_rows = build_resonance_comparison_rows(
+            result.selection_bands,
+            result.analysis.modes,
+            fft_result,
+        )
 
-    written = export_results(
+    report = build_report_tables(
         result,
-        output_dir=output_dir,
-        write_excel=not args.no_excel,
+        input_path=args.file,
+        signal_column=signal_column,
+        t0=args.t0,
         fft_result=fft_result,
         resonance_comparison_rows=resonance_comparison_rows,
     )
-    plot_path = save_comparison_plot(result, output_dir / "comparison_plot.png")
-    modes_frame = build_modes_frame(result)
-    fft_plot_path = None
-    fft_peaks_frame = None
-    comparison_frame = None
-    if fft_result is not None:
-        fft_plot_path = save_fft_plot(fft_result, output_dir / "fft_plot.png")
-        fft_peaks_frame = pd.DataFrame(fft_result.peaks_table())
-        comparison_frame = pd.DataFrame(resonance_comparison_rows or [])
+    written = export_results(
+        result,
+        output_dir=output_dir,
+        input_path=args.file,
+        signal_column=signal_column,
+        t0=args.t0,
+        write_excel=not args.no_excel,
+        debug=args.debug,
+        fft_result=fft_result,
+        resonance_comparison_rows=resonance_comparison_rows,
+        report=report,
+    )
+    plot_path = save_comparison_plot(
+        result,
+        output_dir / "comparison_plot.png",
+        signal_label=signal_column,
+    )
 
-    print("\nDetected modes:")
-    if modes_frame.empty:
-        print("No modes detected")
-    else:
-        print(modes_frame.to_string(index=False))
-    if fft_peaks_frame is not None:
-        print("\nDominant FFT peaks:")
-        if fft_peaks_frame.empty:
-            print("No FFT peaks detected")
-        else:
-            print(fft_peaks_frame.to_string(index=False))
-    if comparison_frame is not None and not comparison_frame.empty:
-        print("\nResonance comparison:")
-        print(comparison_frame.to_string(index=False))
+    print("\nSummary:")
+    for field in (
+        "Zielresonanz",
+        "Resonanzband",
+        "Staerkster FFT-Peak im Resonanzband",
+        "Ausgewaehlte Matrix-Pencil-Mode",
+        "Daempfung",
+        "Amplitude",
+        "Entscheidung",
+    ):
+        print(f"- {field}: {report.summary_items[field]}")
+
+    if report.warnings:
+        print("\nWarnings:")
+        for warning in report.warnings:
+            print(f"- {warning}")
+
+    if args.debug:
+        fft_plot_path = save_fft_plot(
+            fft_result,
+            output_dir / "fft_plot.png",
+            title=f"{signal_column}: FFT-Spektrum des Analysefensters",
+        )
+        written["fft_plot"] = fft_plot_path
+        if not report.modes_frame.empty:
+            print("\nModes in resonance bands:")
+            print(report.modes_frame.to_string(index=False))
+        if report.fft_peaks_frame is not None and not report.fft_peaks_frame.empty:
+            print("\nDominant FFT peaks:")
+            print(report.fft_peaks_frame.to_string(index=False))
+        if report.resonance_comparison_frame is not None and not report.resonance_comparison_frame.empty:
+            print("\nResonance comparison:")
+            print(report.resonance_comparison_frame.to_string(index=False))
+
     print("\nWritten files:")
     for key, path in written.items():
         print(f"- {key}: {path}")
-    print(f"- plot: {plot_path}")
-    if fft_plot_path is not None:
-        print(f"- fft_plot: {fft_plot_path}")
+    print(f"- comparison_plot: {plot_path}")
     return 0
 
 

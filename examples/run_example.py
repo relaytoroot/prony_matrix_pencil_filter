@@ -35,10 +35,14 @@ def main() -> int:
     export_results(
         result,
         output_dir=output_dir,
+        input_path="synthetic_example.csv",
+        signal_column="P_pos",
+        t0=t0,
+        debug=True,
         fft_result=fft_result,
         resonance_comparison_rows=resonance_comparison,
     )
-    save_comparison_plot(result, output_dir / "comparison_plot.png")
+    save_comparison_plot(result, output_dir / "comparison_plot.png", signal_label="P_pos")
     save_fft_plot(fft_result, output_dir / "fft_plot.png")
     print(pd.DataFrame(resonance_comparison).to_string(index=False))
     print(f"Example written to {output_dir}")
