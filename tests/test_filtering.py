@@ -1,8 +1,73 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from prony_filter.filtering import filter_known_modes
+
+
+def test_high_sample_rate_recovers_mode_and_preserves_out_of_band_signal():
+    time = np.arange(0, 7, 1 / 4000)
+    tau = np.maximum(time - 1, 0)
+    target = np.where(time >= 1, 2 * np.exp(-0.2 * tau) * np.cos(2 * np.pi * 2.24 * tau + .3), 0)
+    other = np.where(time >= 1, .7 * np.exp(-0.1 * tau) * np.cos(2 * np.pi * 5 * tau), 0)
+    # 102.24 Hz would alias onto the target after naive downsampling to 100 Hz.
+    interference = np.where(time >= 1, .6 * np.cos(2 * np.pi * 102.24 * tau), 0)
+    values = 10 + target + other + interference
+    result = filter_known_modes(time, values, 1, [2.24], model_order=10)
+    accepted = [m for m in result.modes if m.removed]
+    assert accepted
+    best = min(accepted, key=lambda m: abs(m.frequency_hz - 2.24))
+    assert best.frequency_hz == pytest.approx(2.24, abs=.01)
+    assert best.damping == pytest.approx(-.2, abs=.03)
+    assert best.oscillation_amplitude == pytest.approx(2, abs=.06)
+    assert result.analysis.decimation_factor == 40
+    assert result.analysis.dt == pytest.approx(1 / 4000)
+    assert len(result.filtered) == len(time)
+    assert np.array_equal(result.filtered[time < 1], values[time < 1])
+    assert np.linalg.norm(result.filtered - (10 + other + interference)) / np.linalg.norm(target) < .03
+
+
+def test_growing_oscillation_is_reported_but_not_subtracted():
+    time = np.arange(0, 4, .01)
+    values = np.exp(.2 * time) * np.cos(2 * np.pi * 2 * time)
+    result = filter_known_modes(time, values, 0, [2], model_order=4, detrend='none')
+    assert not any(mode.removed for mode in result.modes)
+    assert np.array_equal(result.filtered, values)
+    assert any('growing' in mode.selection_reason for mode in result.modes)
+
+
+def test_short_window_and_offset_axis_preserve_data_outside_window():
+    time = np.arange(10, 18, .01)
+    values = 3 + np.cos(2 * np.pi * 2 * (time - 10))
+    result = filter_known_modes(time, values, 11, [2], model_order=4, window_length_s=3)
+    outside = (time < 11) | (time > 14)
+    assert np.array_equal(result.filtered[outside], values[outside])
+    assert np.max(np.abs(result.filtered[~outside] - 3)) < 1e-6
+
+
+def test_analysis_rate_must_resolve_requested_band():
+    time = np.arange(0, 4, .001)
+    with pytest.raises(ValueError, match='analysis rate'):
+        filter_known_modes(time, np.cos(2*np.pi*20*time), 0, [20], analysis_rate_hz=50)
+
+
+def test_native_rate_can_resolve_a_mode_below_nyquist_without_decimation():
+    time = np.arange(0, 4, .02)
+    result = filter_known_modes(time, np.cos(2*np.pi*20*time), 0, [20], model_order=4)
+    assert any(mode.removed for mode in result.modes)
+    assert result.analysis.decimation_factor == 1
+    assert np.max(np.abs(result.filtered)) < 1e-6
+
+
+def test_poor_fit_blocks_subtraction_and_explains_why():
+    time = np.arange(0, 4, .01)
+    values = np.exp(-.5*time) * np.cos(2*np.pi*2*time) + .3 * np.random.default_rng(42).normal(size=len(time))
+    result = filter_known_modes(time, values, 0, [2], model_order=4)
+    assert result.analysis.relative_fit_error > .1
+    assert any('reconstruction error' in mode.selection_reason for mode in result.modes)
+    assert not any(mode.removed for mode in result.modes)
+    assert np.array_equal(result.filtered, values)
 
 
 def test_filter_known_modes_reduces_target_oscillation() -> None:

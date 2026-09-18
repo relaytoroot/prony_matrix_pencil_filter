@@ -289,6 +289,8 @@ def build_validation_summary(
         f"- Number of samples after preprocessing: `{len(prepared.uniform_time)}`",
         f"- Sampling interval: `{prepared.dt:.9f}` s",
         f"- Sampling rate: `{1.0 / prepared.dt:.6f}` Hz",
+        f"- Modal estimation rate (anti-aliased): `{real_result.segment_analysis.analysis.estimation_rate_hz:.6f}` Hz",
+        f"- Relative fit error on the modal estimation grid: `{real_result.segment_analysis.analysis.relative_fit_error:.6f}`",
         f"- Detrending: `{prepared.detrend}`",
         f"- Target resonance: `{target_frequency_hz:.6f}` Hz",
         f"- Resonance band: `{band_low:.6f}` Hz to `{band_high:.6f}` Hz",
@@ -319,7 +321,7 @@ def build_validation_summary(
             )
     lines.append("")
 
-    lines.extend(["## 3. Why a mode near 1.92 Hz may have been removed", ""])
+    lines.extend(["## 3. Selection and interpretation", ""])
     if real_result.modes_in_band_frame.empty:
         lines.append("- In this run no Matrix-Pencil mode was found inside the resonance band.")
     else:
@@ -330,22 +332,24 @@ def build_validation_summary(
             f"- Closest in-band mode: `{closest_row['frequency_hz']:.6f}` Hz with damping `{closest_row['damping']:.6f}` 1/s "
             f"and distance `{closest_row['distance_to_target_hz']:.6f}` Hz to the target `{target_frequency_hz:.6f}` Hz."
         )
-        if any(abs(float(freq) - 1.921094) < 0.05 for freq in real_result.modes_in_band_frame["frequency_hz"]):
-            lines.append(
-                "- A mode around `1.92 Hz` lies inside the band `2.2 Hz +/- 20 %`, so the current selection logic can remove it even when the strongest FFT peak is closer to `2.24 Hz`."
-            )
         lines.append(
-            "- This is not automatic proof that `1.92 Hz` is the correct physical drivetrain mode. It only shows that, under the current preprocessing and model order, Matrix Pencil places a damped mode in the expected resonance band there."
+            "- An in-band frequency alone is not proof of a physical drivetrain mode. Growing modes and damping ratios above the default 0.3 limit are kept; poor fits (relative error > 0.1) or excessive removed-component norms block filtering."
         )
+        lines.append("- The mode tables list complex poles: a conjugate pair represents one real oscillation; its cosine amplitude is twice the individual pole amplitude. The CLI Excel report groups these pairs.")
     lines.append("")
 
     lines.extend(["## 4. Stability over t0, window and model order", ""])
-    lines.append(f"- Successful parameter combinations with at least one in-band mode: `{len(successful_stability)}` / `{len(stability_result)}`")
+    lines.append(f"- Parameter combinations with at least one accepted in-band mode: `{len(successful_stability)}` / `{len(stability_result)}`")
     if not successful_stability.empty:
         frequency_series = successful_stability["representative_mode_frequency_hz"].dropna().astype(float)
         lines.append(f"- Frequency range of the representative in-band mode: `{frequency_series.min():.6f}` Hz to `{frequency_series.max():.6f}` Hz")
         lines.append(f"- Frequency mean / std: `{frequency_series.mean():.6f}` Hz / `{frequency_series.std(ddof=0):.6f}` Hz")
-        lines.extend(_stability_cluster_lines(frequency_series))
+        for window, group in stability_result.groupby("window_length_s"):
+            accepted = group[(group["error"] == "") & (group["band_match_count"] > 0)]
+            if not accepted.empty:
+                frequencies = accepted["representative_mode_frequency_hz"].astype(float)
+                dampings = accepted["representative_mode_damping"].astype(float)
+                lines.append(f"- Requested window {window:g} s: {len(accepted)}/{len(group)} accepted; frequency {frequencies.min():.6f} to {frequencies.max():.6f} Hz; damping {dampings.min():.6f} to {dampings.max():.6f} 1/s. Windows are clipped to the available measurement end.")
     else:
         lines.append("- No stable resonance-band mode was found in the tested parameter grid.")
     lines.append("")

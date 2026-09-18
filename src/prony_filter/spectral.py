@@ -6,7 +6,7 @@ import numpy as np
 from scipy import signal as scipy_signal
 
 from .matrix_pencil import Mode
-from .resonance import ResonanceBand
+from .resonance import ResonanceBand, representative_band_mode
 
 
 @dataclass(slots=True)
@@ -150,15 +150,9 @@ def _best_peak_for_band(peaks: list[FFTPeak], band: ResonanceBand) -> FFTPeak | 
 def _best_mode_for_band(modes: list[Mode], band: ResonanceBand) -> Mode | None:
     if not modes:
         return None
-    modes_in_band = [mode for mode in modes if band.contains(mode.frequency_hz)]
-    if modes_in_band:
-        return min(
-            modes_in_band,
-            key=lambda mode: (
-                _target_distance_or_midpoint(mode.frequency_hz, band),
-                mode.index,
-            ),
-        )
+    selected = representative_band_mode(modes, band)
+    if selected is not None:
+        return selected
     return min(
         modes,
         key=lambda mode: (
@@ -197,7 +191,7 @@ def _decision_text(
             f"{'inside' if mode_in_band else 'outside'} band"
         )
 
-    if mode_in_band:
+    if mode_in_band and mode is not None and mode.removed:
         return (
             f"removed: {peak_text}; target band {band.low_hz:.6f}-{band.high_hz:.6f} Hz; "
             f"{mode_text}"

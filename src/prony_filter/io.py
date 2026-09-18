@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .filtering import FilterResult
-from .resonance import ResonanceBand, modes_in_resonance_bands
+from .resonance import ResonanceBand, modes_in_resonance_bands, physical_modes, representative_band_mode
 
 if TYPE_CHECKING:
     from .spectral import FFTPeak, FFTSpectrumResult
@@ -141,12 +141,12 @@ def build_resonance_modes_frame(result: FilterResult) -> pd.DataFrame:
         "Auswahlgrund",
     ]
     rows = []
-    for mode in modes_in_resonance_bands(result.analysis.modes, result.selection_bands):
+    for mode in physical_modes(modes_in_resonance_bands(result.analysis.modes, result.selection_bands)):
         rows.append(
             {
                 "Frequenz [Hz]": mode.frequency_hz,
                 "Daempfung [1/s]": mode.damping,
-                "Amplitude": mode.amplitude,
+                "Amplitude": mode.oscillation_amplitude,
                 "Phase [rad]": mode.phase_rad,
                 "Abstand zur Zielresonanz [Hz]": mode.distance_to_target_hz,
                 "Entfernt": "ja" if mode.removed else "nein",
@@ -292,6 +292,9 @@ def _build_summary_items(
         "Analysiertes Signal": signal_column,
         "Sprungzeitpunkt t0": f"{t0:.6f} s",
         "Analysefenster": analysis_window,
+        "Abtastrate Messdaten": f"{1 / result.analysis.dt:.6f} Hz",
+        "Abtastrate Modenschaetzung": f"{result.analysis.estimation_rate_hz:.6f} Hz",
+        "Relativer Fitfehler Modenschaetzung": f"{result.analysis.relative_fit_error:.6f}",
         "Zielresonanz": target_resonance,
         "Resonanzband": resonance_band,
         "Staerkster FFT-Peak im Resonanzband": strongest_peak,
@@ -311,16 +314,8 @@ def _build_band_summaries(
     peaks = [] if fft_result is None else list(fft_result.peaks)
     summaries: list[dict[str, object]] = []
     for band in bands:
-        modes_in_band = [mode for mode in modes if band.contains(mode.frequency_hz)]
-        selected_mode = None
-        if modes_in_band:
-            selected_mode = min(
-                modes_in_band,
-                key=lambda mode: (
-                    _target_distance_or_midpoint(mode.frequency_hz, band),
-                    mode.index,
-                ),
-            )
+        modes_in_band = [mode for mode in physical_modes(modes) if band.contains(mode.frequency_hz)]
+        selected_mode = representative_band_mode(modes, band)
         peak_in_band = None
         peaks_in_band = [peak for peak in peaks if band.contains(peak.frequency_hz)]
         if peaks_in_band:
@@ -338,6 +333,10 @@ def _build_band_summaries(
 
 def _collect_warnings(result: FilterResult, t0: float, band_summaries: list[dict[str, object]]) -> list[str]:
     warnings: list[str] = []
+    rejected = [mode for mode in physical_modes(result.modes)
+                if mode.band_low_hz is not None and mode.band_low_hz <= mode.frequency_hz <= mode.band_high_hz and not mode.removed]
+    for mode in rejected:
+        warnings.append(f"Mode {mode.frequency_hz:.6f} Hz nicht entfernt: {mode.selection_reason}")
     if not result.selection_bands:
         warnings.append("Keine Resonanzbaender konfiguriert.")
 
@@ -495,7 +494,7 @@ def _amplitude_text(summary: dict[str, object]) -> str:
     selected_mode = summary["selected_mode"]
     if selected_mode is None:
         return "n/a"
-    return f"{selected_mode.amplitude:.6f}"
+    return f"{selected_mode.oscillation_amplitude:.6f}"
 
 
 def _decision_text(summary: dict[str, object]) -> str:

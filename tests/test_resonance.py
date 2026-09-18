@@ -37,3 +37,10 @@ def test_mode_is_removed_when_inside_relative_resonance_band() -> None:
     assert mode.band_high_hz == pytest.approx(2.64)
     assert mode.distance_to_target_hz == pytest.approx(abs(2.2 - 1.921094))
     assert "relative tolerance" in mode.selection_reason
+
+
+def test_strong_transient_is_rejected_by_damping_limit():
+    mode = Mode(0, .9 + .1j, 1 + 0j, 1.92, -10.8, 1, 0)
+    bands = build_resonance_bands([2.2], relative_tolerance=.2)
+    assert annotate_modes_for_resonance_bands([mode], bands, max_damping_ratio=.3) == []
+    assert 'damping ratio' in mode.selection_reason

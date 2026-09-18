@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable
+import math
 
 from .matrix_pencil import Mode
 
@@ -18,6 +19,8 @@ class ResonanceBand:
     def __post_init__(self) -> None:
         self.low_hz = float(self.low_hz)
         self.high_hz = float(self.high_hz)
+        if not math.isfinite(self.low_hz) or not math.isfinite(self.high_hz):
+            raise ValueError("resonance band frequencies must be finite")
         if self.low_hz < 0 or self.high_hz < 0:
             raise ValueError("resonance band frequencies must be non-negative")
         if self.low_hz > self.high_hz:
@@ -101,7 +104,11 @@ def build_resonance_bands(
     return bands
 
 
-def annotate_modes_for_resonance_bands(modes: list[Mode], bands: list[ResonanceBand]) -> list[int]:
+def annotate_modes_for_resonance_bands(
+    modes: list[Mode], bands: list[ResonanceBand], max_damping_ratio: float | None = None,
+) -> list[int]:
+    if max_damping_ratio is not None and (not math.isfinite(max_damping_ratio) or not 0 < max_damping_ratio <= 1):
+        raise ValueError("max_damping_ratio must be in (0, 1]")
     if not bands:
         for mode in modes:
             mode.removed = False
@@ -131,10 +138,36 @@ def annotate_modes_for_resonance_bands(modes: list[Mode], bands: list[ResonanceB
         mode.distance_to_target_hz = nearest_band.distance_to_target_hz(mode.frequency_hz)
         mode.removed = matching_band is not None
         mode.selection_reason = _selection_reason(mode, nearest_band, removed=mode.removed)
+        # Only remove damped (or numerically undamped) oscillations. An in-band
+        # growing fit is evidence of a model/window mismatch, not a safe filter.
+        if mode.removed and mode.damping > 1e-8:
+            mode.removed = False
+            mode.selection_reason = "kept: growing mode; change analysis window or model order"
+        if mode.removed and max_damping_ratio is not None and mode.damping_ratio > max_damping_ratio:
+            mode.removed = False
+            mode.selection_reason = f"kept: damping ratio {mode.damping_ratio:.4f} exceeds limit {max_damping_ratio:.4f}"
         if mode.removed:
             removed_indices.append(mode.index)
 
     return removed_indices
+
+
+def physical_modes(modes: list[Mode]) -> list[Mode]:
+    """One representative per conjugate pair; real poles are retained."""
+    return [mode for mode in modes if mode.pole.imag >= -1e-12]
+
+
+def representative_band_mode(modes: list[Mode], band: ResonanceBand) -> Mode | None:
+    candidates = [mode for mode in physical_modes(modes) if band.contains(mode.frequency_hz)]
+    if not candidates:
+        return None
+    # Prefer accepted modes and sustained oscillatory energy after one period.
+    # A large, rapidly decaying step transient must not dominate the report.
+    def score(mode: Mode) -> tuple[bool, float]:
+        delay = 1.0 / max(mode.frequency_hz, 1e-12)
+        log_amplitude = math.log(max(mode.oscillation_amplitude, 1e-300))
+        return mode.removed, log_amplitude + min(0.0, mode.damping) * delay
+    return max(candidates, key=score)
 
 
 def modes_in_resonance_bands(modes: list[Mode], bands: list[ResonanceBand]) -> list[Mode]:

@@ -37,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Relative tolerance for each --remove target, e.g. 0.2 -> target +/- 20%",
     )
     parser.add_argument("--order", type=int, default=12, help="Matrix-Pencil model order")
+    parser.add_argument("--analysis-rate", type=float, help="Estimation rate in Hz; auto for selected bands, 0 keeps original rate")
+    parser.add_argument("--window-seconds", type=float, help="Analyze and filter only this duration after t0")
+    parser.add_argument("--max-damping-ratio", type=float, default=0.3, help="Maximum damping ratio of modes to remove (0 < ratio <= 1), default 0.3")
     parser.add_argument(
         "--pencil",
         type=int,
@@ -47,6 +50,18 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("none", "constant", "linear"),
         default="constant",
         help="Baseline/trend handling before modal estimation",
+    )
+    parser.add_argument(
+        "--eigen-solver",
+        choices=("dense", "rayleigh"),
+        default="dense",
+        help="Eigenvalue solver for Matrix Pencil. Default: dense uses all eigenvalues; rayleigh searches near --remove/--remove-band guesses.",
+    )
+    parser.add_argument(
+        "--rayleigh-initial-damping",
+        type=float,
+        default=0.0,
+        help="Initial continuous damping real part for Rayleigh iteration. Default: 0.0",
     )
     parser.add_argument(
         "--output-dir",
@@ -107,6 +122,11 @@ def main(argv: list[str] | None = None) -> int:
         model_order=args.order,
         detrend=args.detrend,
         pencil_parameter=args.pencil,
+        eigen_solver=args.eigen_solver,
+        rayleigh_initial_damping=args.rayleigh_initial_damping,
+        analysis_rate_hz=args.analysis_rate,
+        window_length_s=args.window_seconds,
+        max_damping_ratio=args.max_damping_ratio,
     )
     output_dir = Path(args.output_dir)
     fft_result = analyze_fft_spectrum(result.residual, dt=result.analysis.dt, peak_count=50)
@@ -145,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print("\nSummary:")
+    print(f"- Estimation rate: {result.analysis.estimation_rate_hz:.6f} Hz (factor {result.analysis.decimation_factor})")
     for field in (
         "Zielresonanz",
         "Resonanzband",

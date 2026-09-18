@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .filtering import filter_known_modes
-from .resonance import modes_in_resonance_bands
+from .resonance import modes_in_resonance_bands, physical_modes, representative_band_mode
 
 
 def run_stability_scan(
@@ -51,8 +51,11 @@ def run_stability_scan(
                         detrend=detrend,
                         pencil_parameter=pencil_parameter,
                     )
-                    representative_mode = _representative_mode(result.analysis.modes)
-                    band_modes = modes_in_resonance_bands(result.analysis.modes, result.selection_bands)
+                    band_modes = physical_modes(modes_in_resonance_bands(result.analysis.modes, result.selection_bands))
+                    representatives = [representative_band_mode(result.analysis.modes, band) for band in result.selection_bands]
+                    representative_mode = next((mode for mode in representatives if mode is not None and mode.removed), None)
+                    if representative_mode is None:
+                        representative_mode = next((mode for mode in representatives if mode is not None), None)
                     band_frequencies = "; ".join(f"{mode.frequency_hz:.6f}" for mode in band_modes)
                     band_dampings = "; ".join(f"{mode.damping:.6f}" for mode in band_modes)
 
@@ -62,7 +65,10 @@ def run_stability_scan(
                             "t0_s": current_t0,
                             "t0_offset_s": t0_offset_s,
                             "window_length_s": window_length_s,
-                            "band_match_count": len(band_modes),
+                            "band_match_count": sum(mode.removed for mode in band_modes),
+                            "band_candidate_count": len(band_modes),
+                            "estimation_rate_hz": result.analysis.estimation_rate_hz,
+                            "relative_reconstruction_error": result.analysis.relative_fit_error,
                             "band_mode_frequencies_hz": band_frequencies,
                             "band_mode_dampings": band_dampings,
                             "representative_mode_index": None if representative_mode is None else representative_mode.index,
@@ -160,8 +166,8 @@ def build_stability_summary_markdown(result_frame: pd.DataFrame) -> str:
         "# Stability Summary",
         "",
         f"- Analysed configurations: {total_runs}",
-        f"- Configurations with at least one mode in the resonance band: {len(successful)}",
-        f"- Configurations without a band match: {len(missing_band_match)}",
+        f"- Configurations with at least one accepted mode in the resonance band: {len(successful)}",
+        f"- Configurations without an accepted band mode: {len(missing_band_match)}",
         f"- Configurations that failed before estimation: {len(failed)}",
         "",
     ]

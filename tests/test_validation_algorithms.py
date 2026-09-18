@@ -83,6 +83,26 @@ def test_filtering_removes_only_selected_band() -> None:
     assert relative_error < 0.35
 
 
+def test_filtering_can_use_rayleigh_solver_for_selected_band() -> None:
+    time, values, primary_mode, secondary_mode, step_time = _two_mode_step_signal()
+    result = filter_known_modes(
+        time=time,
+        values=values,
+        t0=step_time,
+        remove_frequencies_hz=[2.2],
+        relative_tolerance=0.2,
+        model_order=10,
+        detrend="constant",
+        eigen_solver="rayleigh",
+    )
+    removed_frequencies = [mode.frequency_hz for mode in result.modes if mode.removed]
+
+    assert removed_frequencies
+    assert all(1.76 <= frequency <= 2.64 for frequency in removed_frequencies)
+    expected = 10.0 + secondary_mode
+    assert np.linalg.norm(result.filtered - expected) / np.linalg.norm(primary_mode) < .01
+
+
 def test_signal_before_t0_unchanged() -> None:
     time, values, _, _, step_time = _two_mode_step_signal()
     result = filter_known_modes(

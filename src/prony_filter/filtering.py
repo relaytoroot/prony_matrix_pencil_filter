@@ -6,7 +6,15 @@ from typing import Iterable
 import numpy as np
 from scipy import signal as scipy_signal
 
-from .matrix_pencil import MatrixPencilResult, Mode, estimate_coefficients, matrix_pencil, reconstruct_from_poles
+from .matrix_pencil import (
+    MatrixPencilResult,
+    Mode,
+    estimate_coefficients,
+    matrix_pencil,
+    matrix_pencil_rayleigh,
+    reconstruct_from_poles,
+    modes_from_poles,
+)
 from .resonance import ResonanceBand, annotate_modes_for_resonance_bands, build_resonance_bands
 
 
@@ -68,6 +76,10 @@ def filter_known_modes(
     detrend: str = "constant",
     pencil_parameter: int | None = None,
     window_length_s: float | None = None,
+    eigen_solver: str = "dense",
+    rayleigh_initial_damping: float = 0.0,
+    analysis_rate_hz: float | None = None,
+    max_damping_ratio: float = 0.3,
 ) -> FilterResult:
     prepared = prepare_signal_segment(
         time=time,
@@ -85,6 +97,10 @@ def filter_known_modes(
         relative_tolerance=relative_tolerance,
         remove_bands_hz=remove_bands_hz,
         pencil_parameter=pencil_parameter,
+        eigen_solver=eigen_solver,
+        rayleigh_initial_damping=rayleigh_initial_damping,
+        analysis_rate_hz=analysis_rate_hz,
+        max_damping_ratio=max_damping_ratio,
     )
     # uniform_time is normalized to the segment start, so interpolate on the
     # same relative axis when mapping results back to the original timestamps.
@@ -127,10 +143,12 @@ def prepare_signal_segment(
     window_length_s: float | None = None,
 ) -> PreparedSignalSegment:
     time_array, value_array = _prepare_time_series(time, values)
+    if not np.isfinite(t0):
+        raise ValueError("t0 must be finite")
     segment_mask = time_array >= t0
     if window_length_s is not None:
-        if window_length_s <= 0:
-            raise ValueError("window_length_s must be positive")
+        if not np.isfinite(window_length_s) or window_length_s <= 0:
+            raise ValueError("window_length_s must be finite and positive")
         segment_mask &= time_array <= t0 + window_length_s
     if np.count_nonzero(segment_mask) < max(8, model_order + 4):
         raise ValueError("not enough samples after t0 for the selected model order")
@@ -166,24 +184,72 @@ def analyze_prepared_segment(
     relative_tolerance: float | None = None,
     remove_bands_hz: Iterable[tuple[float, float]] | None = None,
     pencil_parameter: int | None = None,
+    eigen_solver: str = "dense",
+    rayleigh_initial_damping: float = 0.0,
+    analysis_rate_hz: float | None = None,
+    max_damping_ratio: float = 0.3,
 ) -> SegmentAnalysisResult:
-    analysis = matrix_pencil(
-        prepared.residual,
-        dt=prepared.dt,
-        model_order=model_order,
-        pencil_parameter=pencil_parameter,
-    )
-
     absolute_tolerance = None if relative_tolerance is not None else tolerance_hz
+    remove_frequencies = [] if remove_frequencies_hz is None else list(remove_frequencies_hz)
+    remove_bands = None if remove_bands_hz is None else list(remove_bands_hz)
     selection_bands = build_resonance_bands(
-        remove_frequencies_hz=remove_frequencies_hz,
+        remove_frequencies_hz=remove_frequencies,
         tolerance_hz=absolute_tolerance,
         relative_tolerance=relative_tolerance,
-        remove_bands_hz=remove_bands_hz,
+        remove_bands_hz=remove_bands,
     )
-    remove_indices = annotate_modes_for_resonance_bands(analysis.modes, selection_bands)
-    poles = np.array([mode.pole for mode in analysis.modes], dtype=complex)
+    estimation_signal, factor = _prepare_estimation_signal(prepared, selection_bands, analysis_rate_hz)
+    estimation_dt = prepared.dt * factor
+    rayleigh_poles = None
+    if eigen_solver == "dense":
+        analysis = matrix_pencil(
+            estimation_signal,
+            dt=estimation_dt,
+            model_order=model_order,
+            pencil_parameter=pencil_parameter,
+        )
+    elif eigen_solver == "rayleigh":
+        initial_frequencies = _rayleigh_initial_frequencies(remove_frequencies, remove_bands)
+        analysis = matrix_pencil_rayleigh(
+            estimation_signal,
+            dt=estimation_dt,
+            model_order=model_order,
+            initial_frequencies_hz=initial_frequencies,
+            initial_damping=rayleigh_initial_damping,
+            pencil_parameter=pencil_parameter,
+        )
+        rayleigh_poles = np.array([mode.pole for mode in analysis.modes])
+        # Fit nuisance modes as well: fitting a targeted pair alone to a step
+        # response confuses the baseline/other oscillations with its amplitude.
+        analysis = matrix_pencil(
+            estimation_signal, dt=estimation_dt, model_order=model_order,
+            pencil_parameter=pencil_parameter,
+        )
+    else:
+        raise ValueError("eigen_solver must be one of: dense, rayleigh")
+    # Estimate frequencies on the anti-aliased grid, then fit amplitudes jointly
+    # on the ORIGINAL residual. No low-pass filtered measurement is exported.
+    poles = np.exp(np.log(np.array([mode.pole for mode in analysis.modes], dtype=complex)) / factor)
     coefficients = estimate_coefficients(prepared.residual, poles)
+    analysis = MatrixPencilResult(
+        modes=modes_from_poles(poles, coefficients, prepared.dt),
+        dt=prepared.dt,
+        model_order=analysis.model_order,
+        reconstruction=reconstruct_from_poles(poles, coefficients, len(prepared.residual)).real,
+        estimation_dt=estimation_dt,
+        decimation_factor=factor,
+    )
+    fit_reconstruction = analysis.reconstruction if factor == 1 else scipy_signal.resample_poly(
+        analysis.reconstruction, 1, factor, padtype="line"
+    )
+    analysis.relative_fit_error = float(np.linalg.norm(fit_reconstruction - estimation_signal) / max(np.linalg.norm(estimation_signal), 1e-12))
+    remove_indices = annotate_modes_for_resonance_bands(analysis.modes, selection_bands, max_damping_ratio)
+    if rayleigh_poles is not None:
+        for mode in analysis.modes:
+            if mode.removed and not np.any(np.abs(mode.pole ** factor - rayleigh_poles) < 1e-6):
+                mode.removed = False
+                mode.selection_reason = "kept: not selected by Rayleigh iteration"
+        remove_indices = [mode.index for mode in analysis.modes if mode.removed]
     removed_component_uniform = np.zeros_like(prepared.uniform_values, dtype=float)
     if remove_indices:
         selected_poles = poles[remove_indices]
@@ -193,6 +259,19 @@ def analyze_prepared_segment(
             selected_coefficients,
             len(prepared.uniform_values),
         ).real
+    fit_error = analysis.relative_fit_error
+    rejection = ""
+    if fit_error > 0.1:
+        rejection = f"kept: relative reconstruction error {fit_error:.3f} exceeds 0.1"
+    elif np.linalg.norm(removed_component_uniform) > 1.25 * np.linalg.norm(prepared.residual):
+        rejection = "kept: removed component exceeds 1.25 times residual norm; modal cancellation suspected"
+    if rejection:
+        for mode in analysis.modes:
+            if mode.removed:
+                mode.removed = False
+                mode.selection_reason = rejection
+        remove_indices = []
+        removed_component_uniform.fill(0.0)
     filtered_uniform = prepared.uniform_values - removed_component_uniform
     return SegmentAnalysisResult(
         prepared=prepared,
@@ -203,6 +282,33 @@ def analyze_prepared_segment(
         removed_component_uniform=removed_component_uniform,
         filtered_uniform=filtered_uniform,
     )
+
+
+def _prepare_estimation_signal(
+    prepared: PreparedSignalSegment,
+    bands: list[ResonanceBand],
+    analysis_rate_hz: float | None,
+) -> tuple[np.ndarray, int]:
+    """Reduce oversampling for low-frequency modes without folding high frequencies.
+
+    Auto uses at least 100 Hz and ten samples per period at the highest band
+    edge. Zero explicitly disables reduction. Without a band, auto retains the
+    full spectrum. The FFT and exported signal always use the original grid.
+    """
+    highest_frequency = max((band.high_hz for band in bands), default=0.0)
+    input_rate = 1.0 / prepared.dt
+    if highest_frequency >= input_rate / 2:
+        raise ValueError("resonance band must lie below the input Nyquist frequency")
+    if analysis_rate_hz is None:
+        analysis_rate_hz = max(100.0, 10.0 * highest_frequency) if bands else input_rate
+    if not np.isfinite(analysis_rate_hz) or analysis_rate_hz < 0:
+        raise ValueError("analysis_rate_hz must be finite and non-negative (0 disables reduction)")
+    factor = 1 if analysis_rate_hz == 0 else max(1, int(np.floor(input_rate / analysis_rate_hz + 1e-9)))
+    if factor > 1 and highest_frequency and input_rate / factor < 4.0 * highest_frequency:
+        raise ValueError("analysis rate must provide at least four samples per period at the band edge")
+    if factor == 1:
+        return prepared.residual, factor
+    return scipy_signal.resample_poly(prepared.residual, 1, factor, padtype="line"), factor
 
 
 def _prepare_time_series(time: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -244,3 +350,19 @@ def _baseline(values: np.ndarray, detrend: str) -> np.ndarray:
     if detrend == "linear":
         return values - scipy_signal.detrend(values, type="linear")
     raise ValueError("detrend must be one of: none, constant, linear")
+
+
+def _rayleigh_initial_frequencies(
+    remove_frequencies_hz: list[float],
+    remove_bands_hz: list[tuple[float, float]] | None,
+) -> list[float]:
+    frequencies = [abs(float(frequency)) for frequency in remove_frequencies_hz]
+    if remove_bands_hz is not None:
+        frequencies.extend(0.5 * (abs(float(low_hz)) + abs(float(high_hz))) for low_hz, high_hz in remove_bands_hz)
+    if not frequencies:
+        raise ValueError("rayleigh eigen_solver requires --remove or --remove-band as initial frequency guess")
+    unique: list[float] = []
+    for frequency in frequencies:
+        if not any(abs(frequency - existing) <= 1e-9 for existing in unique):
+            unique.append(frequency)
+    return unique

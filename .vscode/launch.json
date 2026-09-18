@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Prony: Vorstellung mit beiden Messdateien",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/presentation_demo.py",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"},
+      "justMyCode": true
+    }
+  ]
+}

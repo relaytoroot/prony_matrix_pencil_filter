@@ -36,7 +36,11 @@ Wichtig:
 - Die FFT liefert nur einen Hinweis für ein plausibles Resonanzband.
 - Die eigentliche Bereinigung erfolgt über die rekonstruierten Matrix-Pencil-Moden.
 
-Im aktuellen Testfall zeigt die FFT einen dominanten Peak bei ungefähr `2.24 Hz`. Die Matrix-Pencil-Analyse findet im selben Setup eine entfernbare Mode bei ungefähr `1.921 Hz`. Diese Mode liegt innerhalb des Resonanzbands `2.2 Hz +/- 20 %`, also `1.76 Hz bis 2.64 Hz`.
+Im geprüften Leistungssignal (18.09.2026, `t0=1 s`, Ordnung 12) liegt der FFT-Peak im Resonanzband bei `2.333236 Hz`; Matrix Pencil findet eine dominante Mode bei `2.268418 Hz` mit Dämpfung `-0.106929 1/s`. Das Band ist `2.2 Hz +/- 20 %`, also `1.76–2.64 Hz`. Die frühere Schätzung um `1.921 Hz` stammte aus einer numerisch ungünstigen Auswertung der stark überabgetasteten Daten.
+
+Die Schätzung verwendet jetzt eine auf den SVD-Rang reduzierte Eigenwertmatrix. Bei diesem Band werden 4.000-Hz-Messdaten mit einem Anti-Aliasing-Filter für die Polschätzung auf 100 Hz reduziert. Amplituden und Phasen werden anschließend gemeinsam auf dem ursprünglichen Signal angepasst. FFT, Excel-Ausgabe und Subtraktion behalten das Messraster.
+
+Ein reproduzierbarer Lauf für beide Messdateien und eine Erklärung für die Vorstellung stehen in [docs/PRONY_VORSTELLUNG.md](docs/PRONY_VORSTELLUNG.md).
 
 ## Resonanzband statt Punktziel
 
@@ -137,9 +141,19 @@ Leistungssignal mit explizitem Resonanzband:
 .\.venv\Scripts\python.exe -m prony_filter.cli --file data\Frequenz_Leistungs_Pendelung.XLS --signal-column P_pos --t0 1.0 --remove-band 1.76 2.64 --order 12 --pencil 256 --output-dir outputs\leistung_band --no-excel
 ```
 
+Optionaler Rayleigh-Quotient-Lauf mit der Zielresonanz als Startwert:
+
+```powershell
+.\.venv\Scripts\python.exe -m prony_filter.cli --file data\Frequenz_Leistungs_Pendelung.XLS --signal-column P_pos --t0 1.0 --remove 2.2 --rel-tol 0.2 --order 12 --pencil 256 --eigen-solver rayleigh --rayleigh-initial-damping -0.1 --output-dir outputs\leistung_rayleigh
+```
+
+Die Rayleigh-Iteration sucht gezielt nahe den Startwerten aus `--remove` beziehungsweise der Mitte von `--remove-band`. Im Filterablauf wird ergänzend die vollständige reduzierte Eigenwertmatrix gelöst, damit Offset, Sprunganteil und weitere Moden bei der Amplitudenanpassung berücksichtigt bleiben. Nur die durch Rayleigh ausgewählten und zugelassenen Moden werden entfernt. Das Verfahren bleibt startwertabhängig; für die Vorstellung und Standardauswertung wird `dense` empfohlen.
+
 Standardmaessig wird fuer die fachliche Auswertung das Wirkleistungssignal `P_pos` verwendet. Dazu erkennt der Import automatisch die direkt links stehende Zeitspalte `Unnamed: 2`.
 
-`--pencil 256` hält die Matrix-Pencil-Rechnung bei großen Messdateien handlich. Ohne Angabe nutzt das Tool ebenfalls einen begrenzten, sicheren Default.
+`--pencil 256` bezieht sich auf das Raster der Polschätzung und wird auf höchstens die halbe Signallänge begrenzt. Ohne Angabe nutzt das Tool einen begrenzten Default. `--analysis-rate` überschreibt die automatische Schätzrate; `--analysis-rate 0` deaktiviert das Herunterabtasten. Automatisch werden mindestens 100 Hz bzw. zehn Abtastwerte je Periode an der oberen Bandgrenze verwendet. Ohne Resonanzband bleibt automatisch das ursprüngliche Raster erhalten.
+
+`--window-seconds` begrenzt Analyse und Bereinigung auf ein Fenster ab `t0`; Werte außerhalb bleiben erhalten. `--max-damping-ratio` begrenzt die zugelassene relative Dämpfung (Standard `0.3`, maximal `1`). Wachsende Moden werden nicht entfernt. Bei einem relativen Fitfehler über 10 % im Schätzraster oder einer Norm der entfernten Komponente über dem 1,25-Fachen der Residualnorm bleibt das Signal unverändert. Diese Grenzen sind konservative Auswahlregeln, kein Nachweis einer physikalischen Resonanz.
 
 ## Output
 
@@ -151,7 +165,7 @@ Ein normaler CLI-Lauf erzeugt im gewählten Output-Ordner nur zwei Dateien:
 `result.xlsx` enthält drei Sheets:
 
 - `Summary`: Eingabedatei, analysiertes Signal, Resonanzband, staerkster FFT-Peak im Band, ausgewaehlte Matrix-Pencil-Mode, Entscheidung und Warnungen
-- `Modes`: nur Moden im Resonanzband
+- `Modes`: nur Moden im Resonanzband, ein Eintrag je konjugiertem Polpaar mit der realen Kosinusamplitude; auch abgelehnte Kandidaten mit Begründung
 - `Signal`: `time`, `original`, `removed_component`, `filtered`
 
 Mit `--debug` werden zusaetzlich Diagnose-Dateien wie `filtered_signal.csv`, `modes.csv`, `fft_spectrum.csv`, `fft_peaks.csv`, `resonance_comparison.csv` und `fft_plot.png` erzeugt.
@@ -159,11 +173,11 @@ Mit `--debug` werden zusaetzlich Diagnose-Dateien wie `filtered_signal.csv`, `mo
 Der fachliche Vergleich im Summary folgt weiterhin dieser Logik:
 
 ```text
-FFT-Peak: ca. 2.24 Hz
+FFT-Peak im Band: 2.333236 Hz
 vorgegebene Resonanz: 2.2 Hz
 verwendetes Band: 1.76 bis 2.64 Hz
-Matrix-Pencil-Mode: 1.921094 Hz
-Entscheidung: entfernt, weil im Resonanzband
+Dominante Matrix-Pencil-Mode: 2.268418 Hz
+Entscheidung: entfernt, im Band und innerhalb der Auswahlgrenzen
 ```
 
 ## Stabilitätstest
@@ -223,4 +237,5 @@ Interpretation:
 - `t0` muss zum Sprungtest passen, sonst werden falsche Signalanteile geschätzt.
 - Ungleichmäßig abgetastete Daten werden intern auf ein gleichmäßiges Raster interpoliert.
 - FFT und Matrix Pencil können unterschiedliche, aber fachlich trotzdem vereinbare Hinweise liefern.
+- Die positive Sprungmessung ist insbesondere bei kurzen 3-s-Fenstern weiterhin empfindlich. Ein Bandtreffer allein ist kein Robustheitsnachweis; Frequenz, Dämpfung, Fitfehler und Parameterstabilität gemeinsam bewerten.
 - Der Prototyp ist ein technischer Startpunkt und noch kein Zertifizierungstool.
