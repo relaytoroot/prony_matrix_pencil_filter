@@ -1,3 +1,11 @@
+"""Programmeinstieg für die Bedienung im Terminal.
+
+Start in Git Bash: ./.venv/Scripts/python.exe -m prony_filter.cli --help
+main() liest die Optionen, lädt Messwerte, ruft die Filterung auf und speichert
+Tabellen und Diagramme. Die mathematischen Verfahren stehen in den Fachmodulen.
+Die Optionsnamen bleiben für bestehende Startbefehle unverändert.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -10,86 +18,88 @@ from .spectral import analyze_fft_spectrum, build_resonance_comparison_rows
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Filter damped oscillations after a step test.")
-    parser.add_argument("--file", required=True, help="Input XLS/XLSX/CSV file")
-    parser.add_argument("--sheet", default=0, help="Excel sheet name or index. Default: 0")
-    parser.add_argument("--list-columns", action="store_true", help="Only list available columns and exit")
-    parser.add_argument("--time-column", help="Name of the time column")
+    """Definiert die Terminaloptionen und erklärt ihre Bedeutung auf Deutsch."""
+    parser = argparse.ArgumentParser(description="Gedämpfte Schwingungen nach einem Sprungtest analysieren und entfernen.")
+    parser.add_argument("--file", required=True, help="Eingabedatei im Format XLS, XLSX oder CSV")
+    parser.add_argument("--sheet", default=0, help="Name oder Index des Excel-Blatts; Standard: 0 (erstes Blatt)")
+    parser.add_argument("--list-columns", action="store_true", help="Verfügbare Spalten anzeigen und beenden")
+    parser.add_argument("--time-column", help="Name der Zeitspalte; Zeitwerte in Sekunden")
     parser.add_argument(
         "--signal-column",
         default="P_pos",
-        help="Name of the signal column. Default: P_pos",
+        help="Name der Signalspalte; Standard: P_pos (Leistung)",
     )
-    parser.add_argument("--t0", type=float, help="Step time. Samples before this time are left unchanged")
-    parser.add_argument("--remove", nargs="*", type=float, default=[], help="Known resonance frequencies to remove in Hz")
+    parser.add_argument("--t0", type=float, help="Beginn des Analysefensters in Sekunden; frühere Werte bleiben erhalten")
+    parser.add_argument("--remove", nargs="*", type=float, default=[], help="Zielresonanzfrequenzen der zu entfernenden Schwingungen in Hz")
     parser.add_argument(
         "--remove-band",
         nargs=2,
         action="append",
         metavar=("LOW_HZ", "HIGH_HZ"),
         type=float,
-        help="Explicit resonance band to remove, e.g. --remove-band 1.76 2.64",
+        help="Unter- und Obergrenze des Resonanzbands in Hz, z. B. --remove-band 1.76 2.64",
     )
-    parser.add_argument("--tol", type=float, help="Absolute frequency tolerance in Hz. Default: 0.2")
+    parser.add_argument("--tol", type=float, help="Absolute Frequenztoleranz in Hz; Standard: 0.2")
     parser.add_argument(
         "--rel-tol",
         type=float,
-        help="Relative tolerance for each --remove target, e.g. 0.2 -> target +/- 20%",
+        help="Relative Toleranz je Zielwert aus --remove, z. B. 0.2 entspricht +/- 20 %%",
     )
-    parser.add_argument("--order", type=int, default=12, help="Matrix-Pencil model order")
-    parser.add_argument("--analysis-rate", type=float, help="Estimation rate in Hz; auto for selected bands, 0 keeps original rate")
-    parser.add_argument("--window-seconds", type=float, help="Analyze and filter only this duration after t0")
-    parser.add_argument("--max-damping-ratio", type=float, default=0.3, help="Maximum damping ratio of modes to remove (0 < ratio <= 1), default 0.3")
+    parser.add_argument("--order", type=int, default=12, help="Modellordnung: maximale Anzahl komplexer Exponentialanteile; Standard: 12")
+    parser.add_argument("--analysis-rate", type=float, help="Abtastrate für die Polschätzung in Hz; automatisch bei Bandwahl, 0 erhält die Eingangsrate")
+    parser.add_argument("--window-seconds", type=float, help="Dauer des Analyse- und Filterfensters ab t0 in Sekunden")
+    parser.add_argument("--max-damping-ratio", type=float, default=0.3, help="Maximales Dämpfungsverhältnis zeta der entfernbaren Moden (0 < zeta <= 1); Standard: 0.3")
     parser.add_argument(
         "--pencil",
         type=int,
-        help="Optional Matrix-Pencil parameter. Smaller values are faster for large measurements.",
+        help="Anzahl der Hankel-Spalten im Schätzraster; kleinere Werte verringern den Rechenaufwand",
     )
     parser.add_argument(
         "--detrend",
         choices=("none", "constant", "linear"),
         default="constant",
-        help="Baseline/trend handling before modal estimation",
+        help="Grundanteil vor der Schätzung: none = keiner, constant = Mittelwert, linear = linearer Trend",
     )
     parser.add_argument(
         "--eigen-solver",
         choices=("dense", "rayleigh"),
         default="dense",
-        help="Eigenvalue solver for Matrix Pencil. Default: dense uses all eigenvalues; rayleigh searches near --remove/--remove-band guesses.",
+        help="Eigenwertverfahren: dense = alle Eigenwerte (Standard); rayleigh = gezielte Suche nahe den Zielwerten mit ergänzender Gesamtschätzung",
     )
     parser.add_argument(
         "--rayleigh-initial-damping",
         type=float,
         default=0.0,
-        help="Initial continuous damping real part for Rayleigh iteration. Default: 0.0",
+        help="Startschätzung des Dämpfungsexponenten d in 1/s für Rayleigh; Standard: 0.0",
     )
     parser.add_argument(
         "--output-dir",
         default="outputs",
-        help="Directory for result.xlsx, comparison_plot.png and optional debug files",
+        help="Ausgabeordner für result.xlsx, comparison_plot.png und optionale Diagnosedateien",
     )
-    parser.add_argument("--no-excel", action="store_true", help="Do not write result.xlsx")
+    parser.add_argument("--no-excel", action="store_true", help="Keine Excel-Ergebnisdatei schreiben")
     parser.add_argument(
         "--fft",
         action="store_true",
-        help="Kept for compatibility. FFT summary is computed automatically.",
+        help="Kompatibilitätsoption; der FFT-Vergleich wird bereits automatisch berechnet",
     )
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Write additional debug files such as CSV exports and FFT plots",
+        help="Zusätzliche Diagnosedateien wie CSV-Tabellen und FFT-Diagramm speichern",
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Führt Einlesen, Filterung, FFT-Vergleich und Ausgabe nacheinander aus."""
     parser = build_parser()
     args = parser.parse_args(argv)
     sheet = _parse_sheet(args.sheet)
     frame = read_table(args.file, sheet_name=sheet)
 
     if args.list_columns:
-        print("Available columns:")
+        print("Verfügbare Spalten:")
         for column in list_columns(frame):
             print(f"- {column}")
         return 0
@@ -106,11 +116,12 @@ def main(argv: list[str] | None = None) -> int:
         time_column=args.time_column,
         signal_column=args.signal_column,
     )
-    print(f"Using time column: {time_column}")
-    print(f"Using signal column: {signal_column}")
+    print(f"Verwendete Zeitspalte: {time_column}")
+    print(f"Verwendete Signalspalte: {signal_column}")
     tolerance_hz = 0.2 if args.rel_tol is None and args.tol is None else args.tol
     remove_bands_hz = None if args.remove_band is None else [(band[0], band[1]) for band in args.remove_band]
 
+    # Zeit- und Signalwerte an den Filterablauf übergeben; die CLI rechnet keine Pole selbst.
     result = filter_known_modes(
         time=time,
         values=values,
@@ -129,6 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         max_damping_ratio=args.max_damping_ratio,
     )
     output_dir = Path(args.output_dir)
+    # Ergänzender FFT-Vergleich auf demselben vorbereiteten Restsignal.
     fft_result = analyze_fft_spectrum(result.residual, dt=result.analysis.dt, peak_count=50)
     resonance_comparison_rows = None
     if result.selection_bands:
@@ -164,8 +176,8 @@ def main(argv: list[str] | None = None) -> int:
         signal_label=signal_column,
     )
 
-    print("\nSummary:")
-    print(f"- Estimation rate: {result.analysis.estimation_rate_hz:.6f} Hz (factor {result.analysis.decimation_factor})")
+    print("\nZusammenfassung:")
+    print(f"- Abtastrate der Polschätzung: {result.analysis.estimation_rate_hz:.6f} Hz (Faktor {result.analysis.decimation_factor})")
     for field in (
         "Zielresonanz",
         "Resonanzband",
@@ -178,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"- {field}: {report.summary_items[field]}")
 
     if report.warnings:
-        print("\nWarnings:")
+        print("\nHinweise:")
         for warning in report.warnings:
             print(f"- {warning}")
 
@@ -190,16 +202,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         written["fft_plot"] = fft_plot_path
         if not report.modes_frame.empty:
-            print("\nModes in resonance bands:")
+            print("\nModen in den Resonanzbändern:")
             print(report.modes_frame.to_string(index=False))
         if report.fft_peaks_frame is not None and not report.fft_peaks_frame.empty:
-            print("\nDominant FFT peaks:")
+            print("\nDominante FFT-Spektralspitzen:")
             print(report.fft_peaks_frame.to_string(index=False))
         if report.resonance_comparison_frame is not None and not report.resonance_comparison_frame.empty:
-            print("\nResonance comparison:")
+            print("\nResonanzvergleich:")
             print(report.resonance_comparison_frame.to_string(index=False))
 
-    print("\nWritten files:")
+    print("\nGespeicherte Dateien:")
     for key, path in written.items():
         print(f"- {key}: {path}")
     print(f"- comparison_plot: {plot_path}")

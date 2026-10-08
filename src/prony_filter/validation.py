@@ -1,3 +1,11 @@
+"""Überprüfung des Verfahrens mit bekannten Testsignalen und echten Messdaten.
+
+Synthetische Signale besitzen vorgegebene Frequenzen, Dämpfungen, Amplituden
+und Phasen. Deren Rückgewinnung prüft die Mathematik. Für Messdaten werden
+FFT-Vergleich und Parameterstudie ergänzt. Einstieg: generate_validation_report()
+oder in Git Bash: ./.venv/Scripts/python.exe -m prony_filter.validation --help
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -17,6 +25,13 @@ from .stability import build_stability_summary_markdown, run_stability_scan
 
 @dataclass(slots=True)
 class SyntheticCaseConfig:
+    """Vorgegebene Referenzparameter; *_true bezeichnet den bekannten Sollwert.
+
+    offset ist der Gleichanteil, noise_std die Standardabweichung des Rauschens.
+    second_mode enthält optional Frequenz, Dämpfung, Amplitude und Phase
+    einer zweiten Schwingung. random_seed macht das Rauschen reproduzierbar.
+    """
+
     name: str
     f_true: float = 2.24
     d_true: float = -0.5
@@ -34,6 +49,8 @@ class SyntheticCaseConfig:
 
 @dataclass(slots=True)
 class SyntheticCaseResult:
+    """Testsignal, geschätzte Parameter (recovered_*) und Rekonstruktionsfehler."""
+
     config: SyntheticCaseConfig
     time: np.ndarray
     signal: np.ndarray
@@ -50,6 +67,8 @@ class SyntheticCaseResult:
 
 @dataclass(slots=True)
 class RealSignalValidationResult:
+    """Vorbereitete Messdaten mit Moden-, FFT- und Vergleichstabellen."""
+
     prepared: PreparedSignalSegment
     segment_analysis: SegmentAnalysisResult
     fft_result: FFTSpectrumResult
@@ -76,6 +95,7 @@ def generate_validation_report(
     stability_windows_s: list[float] | None = None,
     debug: bool = False,
 ) -> Path:
+    """Erstellt Referenztests, Messdatenvergleich und Parameterstudie in einem Ordner."""
     report_dir = Path(output_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -209,6 +229,7 @@ def analyze_real_signal(
 
 
 def run_synthetic_case(config: SyntheticCaseConfig) -> SyntheticCaseResult:
+    """Erzeugt ein bekanntes Signal und vergleicht seine Schätzung mit den Sollwerten."""
     time = np.arange(0.0, config.duration_s, config.dt)
     signal = _build_synthetic_signal(time, config)
     prepared = prepare_signal_segment(
@@ -368,47 +389,49 @@ def build_validation_summary(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Generate a validation report for Matrix Pencil and FFT comparison.")
-    parser.add_argument("--file", required=True, help="Input XLS/XLSX/CSV file")
-    parser.add_argument("--sheet", default=0, help="Excel sheet name or index. Default: 0")
-    parser.add_argument("--time-column", help="Name of the time column")
-    parser.add_argument("--signal-column", default="P_pos", help="Name of the signal column. Default: P_pos")
-    parser.add_argument("--t0", type=float, default=1.0, help="Step time for the analysis segment")
-    parser.add_argument("--target-frequency", type=float, default=2.2, help="Target resonance frequency in Hz")
-    parser.add_argument("--relative-tolerance", type=float, default=0.2, help="Relative resonance-band tolerance")
-    parser.add_argument("--order", type=int, default=12, help="Matrix-Pencil model order for the real-data run")
-    parser.add_argument("--pencil", type=int, default=256, help="Optional Matrix-Pencil parameter")
+    """Definiert die Terminaloptionen für die fachliche Überprüfung."""
+    parser = argparse.ArgumentParser(description="Prüfbericht für Matrix Pencil mit Referenzsignalen und FFT-Vergleich erstellen.")
+    parser.add_argument("--file", required=True, help="Eingabedatei im Format XLS, XLSX oder CSV")
+    parser.add_argument("--sheet", default=0, help="Name oder Index des Excel-Blatts; Standard: 0")
+    parser.add_argument("--time-column", help="Name der Zeitspalte")
+    parser.add_argument("--signal-column", default="P_pos", help="Name der Signalspalte; Standard: P_pos")
+    parser.add_argument("--t0", type=float, default=1.0, help="Beginn des Analysefensters in Sekunden")
+    parser.add_argument("--target-frequency", type=float, default=2.2, help="Zielresonanzfrequenz in Hz")
+    parser.add_argument("--relative-tolerance", type=float, default=0.2, help="Relative Toleranz des Resonanzbands")
+    parser.add_argument("--order", type=int, default=12, help="Modellordnung für die Auswertung der Messdatei")
+    parser.add_argument("--pencil", type=int, default=256, help="Anzahl der Hankel-Spalten im Schätzraster")
     parser.add_argument(
         "--detrend",
         choices=("none", "constant", "linear"),
         default="constant",
-        help="Baseline/trend handling before modal estimation",
+        help="Grundanteil vor der Schätzung: none = keiner, constant = Mittelwert, linear = linearer Trend",
     )
-    parser.add_argument("--output-dir", default="validation_report", help="Directory for the generated validation report")
+    parser.add_argument("--output-dir", default="validation_report", help="Ausgabeordner für den Prüfbericht")
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Write additional diagnostic plots and full-spectrum exports",
+        help="Zusätzliche Diagnosediagramme und vollständige Spektren speichern",
     )
-    parser.add_argument("--orders", nargs="*", type=int, default=[8, 10, 12, 14, 16], help="Orders for the stability scan")
+    parser.add_argument("--orders", nargs="*", type=int, default=[8, 10, 12, 14, 16], help="Modellordnungen für die Parameterstudie")
     parser.add_argument(
         "--stability-t0",
         nargs="*",
         type=float,
         default=[0.98, 1.00, 1.02],
-        help="Absolute t0 values for the stability scan",
+        help="Absolute Startzeiten t0 für die Parameterstudie in Sekunden",
     )
     parser.add_argument(
         "--stability-windows",
         nargs="*",
         type=float,
         default=[3.0, 5.0, 7.0],
-        help="Window lengths in seconds for the stability scan",
+        help="Fensterlängen für die Parameterstudie in Sekunden",
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Startet die Berichtserstellung mit den im Terminal gewählten Parametern."""
     parser = build_parser()
     args = parser.parse_args(argv)
     output_dir = generate_validation_report(
@@ -428,11 +451,12 @@ def main(argv: list[str] | None = None) -> int:
         stability_windows_s=args.stability_windows,
         debug=args.debug,
     )
-    print(f"Validation report written to {output_dir}")
+    print(f"Prüfbericht gespeichert unter {output_dir}")
     return 0
 
 
 def _build_synthetic_signal(time: np.ndarray, config: SyntheticCaseConfig) -> np.ndarray:
+    """Bildet gedämpfte Kosinusschwingungen und ergänzt Gleichanteil und Rauschen."""
     rng = np.random.default_rng(config.random_seed)
     signal = config.amplitude_true * np.exp(config.d_true * time) * np.cos(
         2.0 * np.pi * config.f_true * time + config.phase_true

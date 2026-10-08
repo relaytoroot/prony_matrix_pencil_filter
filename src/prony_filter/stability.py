@@ -1,3 +1,10 @@
+"""Prüft die Empfindlichkeit der Ergebnisse gegenüber den Analyseparametern.
+
+Stabilität bedeutet hier: Wie stark ändern sich Frequenz und Dämpfung bei
+anderen Modellordnungen, Startzeiten und Fensterlängen? Das ist eine Prüfung
+der Schätzung und keine eigenständige Stabilitätsanalyse des physikalischen Systems.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -23,6 +30,13 @@ def run_stability_scan(
     pencil_parameter: int | None = None,
     window_lengths_s: Iterable[float | None] | None = None,
 ) -> pd.DataFrame:
+    """Wiederholt die Filterung für jede Kombination der vorgegebenen Parameter.
+
+    model_orders: Modellordnungen; t0_offsets_s: Verschiebungen des Fensterstarts;
+    window_lengths_s: Fensterlängen. Jede Tabellenzeile beschreibt einen Lauf.
+    Bandkandidaten und tatsächlich zur Entfernung zugelassene Moden werden
+    getrennt erfasst; ein Bandtreffer allein belegt keine robuste Schätzung.
+    """
     time_array = np.asarray(time, dtype=float)
     value_array = np.asarray(values, dtype=float)
     rows: list[dict[str, object]] = []
@@ -157,6 +171,7 @@ def _distance_to_band(frequency_hz: float, low_hz: float | None, high_hz: float 
 
 
 def build_stability_summary_markdown(result_frame: pd.DataFrame) -> str:
+    """Fasst erfolgreiche Läufe, fehlende Bandtreffer und Fehler als Bericht zusammen."""
     total_runs = len(result_frame)
     successful = result_frame[(result_frame["error"] == "") & (result_frame["band_match_count"] > 0)]
     failed = result_frame[result_frame["error"] != ""]

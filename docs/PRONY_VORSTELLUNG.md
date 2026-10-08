@@ -1,6 +1,6 @@
 # Prony-/Matrix-Pencil-Analyse vorstellen
 
-Stand: 18.09.2026. Die Umsetzung verwendet **Matrix Pencil**; `prony.py` ist ein Kompatibilitätswrapper, keine eigenständige klassische Prony-Implementierung.
+Stand: 18.09.2026. Die Umsetzung verwendet **Matrix Pencil**, keine eigenständige klassische Prony-Implementierung.
 
 ## Erklärung in einer Minute
 
@@ -16,7 +16,22 @@ Das Modell lautet:
 - Frequenz: `abs(Im(s_i))/(2*pi)`; Dämpfung: `Re(s_i)`.
 - Zwei komplex konjugierte Pole bilden eine reale Schwingung. Ihre Kosinusamplitude ist `2*abs(c_i)`. Der Excel-Bericht fasst das Paar zusammen; die Diagnose-CSV zeigt einzelne Pole.
 
-## Code in dieser Reihenfolge zeigen
+## Minimaler Codepfad
+
+Zum Nachvollziehen der Mathematik reicht zuerst eine Datei:
+[examples/minimal_matrix_pencil.py](../examples/minimal_matrix_pencil.py).
+Sie enthaelt ein kuenstliches Signal mit bekannten Moden und direkt darunter
+die fuenf Rechenschritte: Hankel-Matrizen, SVD, Eigenwerte, Koeffizienten und
+Rekonstruktion beziehungsweise Subtraktion. Start:
+
+```powershell
+.\.venv\Scripts\python.exe examples\minimal_matrix_pencil.py
+```
+
+Die produktive Umsetzung bleibt umfangreicher, weil sie Messdateien,
+Anti-Aliasing, ungleichmaessige Zeitraster, Auswahlgrenzen und Exporte absichert.
+
+## Vollstaendiger Produktionspfad
 
 | Datei / Funktion | Was passiert dort? |
 |---|---|

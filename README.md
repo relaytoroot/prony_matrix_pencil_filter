@@ -19,7 +19,22 @@ Dabei sind:
 - `A_i`: Amplitude
 - `phi_i`: Phase
 
-Fachlich wird oft von Prony-Analyse gesprochen. Intern nutzt dieses Projekt aktuell Matrix Pencil als robustes Kernverfahren. `prony.py` bleibt als Wrapper erhalten, damit später bei Bedarf ein klassisches Prony-Verfahren ergänzt werden kann.
+Fachlich wird oft von Prony-Analyse gesprochen. Dieses Projekt verwendet dafür Matrix Pencil als robustes Kernverfahren.
+
+## Minimales, nachvollziehbares Beispiel
+
+Die reine Matrix-Pencil-Rechnung steht kompakt in
+[`examples/minimal_matrix_pencil.py`](examples/minimal_matrix_pencil.py). Das
+Beispiel erzeugt zwei bekannte gedämpfte Schwingungen und zeigt unmittelbar:
+Hankel-Matrizen, SVD, Eigenwerte, Koeffizienten, Rekonstruktion und das Abziehen
+der 2,24-Hz-Mode.
+
+```powershell
+.\.venv\Scripts\python.exe examples\minimal_matrix_pencil.py
+```
+
+Die Module unter `src/prony_filter/` bleiben die robuste Variante für reale
+Messdaten, ungleichmäßige Zeitraster, Anti-Aliasing und Ergebnisexporte.
 
 ## FFT und Matrix Pencil
 
@@ -80,7 +95,6 @@ prony_matrix_pencil_filter/
       io.py
       matrix_pencil.py
       plotting.py
-      prony.py
       resonance.py
       spectral.py
       stability.py

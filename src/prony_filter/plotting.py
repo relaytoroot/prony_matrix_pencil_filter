@@ -1,3 +1,5 @@
+"""Stellt vorhandene Analyseergebnisse als Signal- und Frequenzdiagramme dar."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,6 +16,7 @@ def save_comparison_plot(
     signal_label: str,
     title: str | None = None,
 ) -> Path:
+    """Speichert Gesamtverlauf, vergrößerten Ausschnitt und entfernten Signalanteil."""
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -22,7 +25,7 @@ def save_comparison_plot(
         ax.plot(result.time, result.original, label="Original", linewidth=1.1)
         ax.plot(result.time, result.filtered, label="Bereinigt", linewidth=1.1)
     axes[0].set_title(title or f"{signal_label}: Sprungantwort und Bereinigung")
-    # Show the late oscillatory part separately from the much larger step.
+    # Die spätere Schwingung vergrößert zeigen, damit sie neben dem großen Sprung sichtbar bleibt.
     zoom_start = result.segment_time[0] + 0.5 * (result.segment_time[-1] - result.segment_time[0])
     zoom = (result.time >= zoom_start) & (result.time <= result.segment_time[-1])
     axes[1].set_xlim(zoom_start, result.segment_time[-1])
@@ -44,18 +47,19 @@ def save_comparison_plot(
 
 
 def save_fft_plot(result: FFTSpectrumResult, path: str | Path, title: str = "FFT-Spektrum") -> Path:
+    """Speichert das FFT-Betragsspektrum und markiert die ausgewählten Spitzen."""
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(result.frequencies_hz, result.magnitudes, linewidth=1.2, label="FFT magnitude")
+    ax.plot(result.frequencies_hz, result.magnitudes, linewidth=1.2, label="FFT-Betrag")
     if result.peaks:
         peak_frequencies = [peak.frequency_hz for peak in result.peaks]
         peak_magnitudes = [peak.magnitude for peak in result.peaks]
-        ax.scatter(peak_frequencies, peak_magnitudes, color="tab:red", label="Dominant peaks", zorder=3)
+        ax.scatter(peak_frequencies, peak_magnitudes, color="tab:red", label="Dominante Spektralspitzen", zorder=3)
     ax.set_title(title)
     ax.set_xlabel("Frequenz [Hz]")
-    ax.set_ylabel("Magnitude")
+    ax.set_ylabel("Normierter FFT-Betrag")
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()

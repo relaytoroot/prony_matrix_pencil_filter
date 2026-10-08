@@ -1,3 +1,15 @@
+"""Ablauf der Filterung: Messdaten vorbereiten, Moden schätzen und abziehen.
+
+Einstieg ist filter_known_modes(time, values, t0, ...). Die reine
+Polberechnung liegt in matrix_pencil.py, die Bandauswahl in resonance.py.
+Dieses Modul übernimmt Zeitfenster, Abtastraster, Trendbehandlung,
+Qualitätsprüfung und Rückgabe auf den ursprünglichen Messzeitpunkten.
+
+Begriffe: segment = Analyseabschnitt, uniform = gleichmäßig abgetastet,
+baseline = Grundanteil (Mittelwert oder linearer Trend), residual = Messwerte
+nach Abzug dieses Grundanteils, removed_component = entfernter Signalanteil.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,6 +32,14 @@ from .resonance import ResonanceBand, annotate_modes_for_resonance_bands, build_
 
 @dataclass(slots=True)
 class FilterResult:
+    """Original, entfernter Anteil und bereinigtes Signal samt Analyseergebnis.
+
+    time/original/filtered beziehen sich auf die gültigen, sortierten
+    Messpunkte. segment_* enthält nur das gewählte Analysefenster;
+    uniform_* beschreibt dessen gegebenenfalls vereinheitlichtes Zeitraster.
+    Es gilt filtered = original - removed_component.
+    """
+
     time: np.ndarray
     original: np.ndarray
     filtered: np.ndarray
@@ -38,6 +58,13 @@ class FilterResult:
 
 @dataclass(slots=True)
 class PreparedSignalSegment:
+    """Vorbereitete Messwerte und Zuordnung zum vollständigen Signal.
+
+    segment_mask markiert die Messpunkte im gewählten Zeitfenster.
+    uniform_time beginnt bei null; dt ist der Abtastabstand in Sekunden.
+    residual = uniform_values - baseline ist das Signal für die Modenschätzung.
+    """
+
     full_time: np.ndarray
     full_values: np.ndarray
     segment_mask: np.ndarray
@@ -55,6 +82,8 @@ class PreparedSignalSegment:
 
 @dataclass(slots=True)
 class SegmentAnalysisResult:
+    """Analyse, Modenauswahl und Filterergebnis auf dem gleichmäßigen Zeitraster."""
+
     prepared: PreparedSignalSegment
     modes: list[Mode]
     analysis: MatrixPencilResult
@@ -81,6 +110,19 @@ def filter_known_modes(
     analysis_rate_hz: float | None = None,
     max_damping_ratio: float = 0.3,
 ) -> FilterResult:
+    """Entfernt zugelassene Schwingungsanteile innerhalb des Analysefensters.
+
+    time: Messzeitpunkte in Sekunden; values: zugehörige Signalwerte.
+    t0: Beginn der Analyse; window_length_s: optionale Fensterlänge ab t0.
+    remove_frequencies_hz und Toleranz bzw. remove_bands_hz legen fest,
+    in welchen Frequenzbereichen Schwingungen entfernt werden dürfen.
+    model_order begrenzt die Anzahl komplexer Exponentialanteile.
+
+    Ablauf: vorbereiten -> schätzen und auswählen -> rekonstruieren -> abziehen.
+    Messwerte außerhalb des Fensters bleiben erhalten. Die Rückgabe enthält
+    zusätzlich Grundanteil, Restsignal, Moden und Angaben zur Modellanpassung.
+    """
+    # 1. Zeitfenster auswählen, Abtastraster prüfen und Grundanteil bestimmen.
     prepared = prepare_signal_segment(
         time=time,
         values=values,
@@ -89,6 +131,7 @@ def filter_known_modes(
         model_order=model_order,
         window_length_s=window_length_s,
     )
+    # 2. Schwingungen schätzen und die zur Entfernung geeigneten Anteile wählen.
     segment_analysis = analyze_prepared_segment(
         prepared=prepared,
         model_order=model_order,
@@ -102,8 +145,8 @@ def filter_known_modes(
         analysis_rate_hz=analysis_rate_hz,
         max_damping_ratio=max_damping_ratio,
     )
-    # uniform_time is normalized to the segment start, so interpolate on the
-    # same relative axis when mapping results back to the original timestamps.
+    # 3. Den rekonstruierten Anteil auf die Messzeitpunkte zurückübertragen.
+    # Beide Zeitachsen müssen relativ zum Anfang des Analyseabschnitts sein.
     segment_time_relative = prepared.segment_time - prepared.segment_time[0]
     removed_component = np.zeros_like(prepared.full_values, dtype=float)
     removed_component_segment = np.interp(
@@ -113,6 +156,7 @@ def filter_known_modes(
     )
     removed_component[prepared.segment_mask] = removed_component_segment
     filtered = prepared.full_values.copy()
+    # 4. Bereinigtes Signal = Originalsignal - ausgewählte Schwingungsanteile.
     filtered[prepared.segment_mask] = prepared.segment_values - removed_component_segment
     segment_filtered = filtered[prepared.segment_mask]
 
@@ -142,6 +186,13 @@ def prepare_signal_segment(
     model_order: int = 12,
     window_length_s: float | None = None,
 ) -> PreparedSignalSegment:
+    """Wählt Messwerte ab t0 aus und bereitet sie für die Modenschätzung vor.
+
+    Ungültige Werte und doppelte Zeitpunkte werden entfernt, Zeiten sortiert.
+    Ein ungleichmäßiges Zeitraster wird durch lineare Interpolation vereinheitlicht.
+    detrend='constant' zieht den Mittelwert ab, 'linear' einen linearen Trend,
+    'none' lässt die Werte für die Analyse unverändert.
+    """
     time_array, value_array = _prepare_time_series(time, values)
     if not np.isfinite(t0):
         raise ValueError("t0 must be finite")
@@ -156,8 +207,10 @@ def prepare_signal_segment(
     segment_time = time_array[segment_mask]
     segment_values = value_array[segment_mask]
     uniform_time, uniform_values = _resample_if_needed(segment_time, segment_values)
+    # Alle benachbarten Zeitabstände berücksichtigen: dt = Median der Differenzen.
     dt = float(np.median(np.diff(uniform_time)))
     baseline = _baseline(uniform_values, detrend)
+    # Das Restsignal enthält die Anteile, die Matrix Pencil modellieren soll.
     residual = uniform_values - baseline
     return PreparedSignalSegment(
         full_time=time_array,
@@ -189,6 +242,13 @@ def analyze_prepared_segment(
     analysis_rate_hz: float | None = None,
     max_damping_ratio: float = 0.3,
 ) -> SegmentAnalysisResult:
+    """Schätzt Moden, prüft ihre Eignung und rekonstruiert den zu entfernenden Anteil.
+
+    Die Pole werden bei Bedarf auf einem gröberen, tiefpassgefilterten Raster
+    geschätzt. Anschließend werden alle Koeffizienten gemeinsam an das Restsignal
+    auf dem ursprünglichen Analyseraster angepasst. Frequenzband, Dämpfung und
+    Anpassungsfehler entscheiden, welche Anteile tatsächlich entfernt werden.
+    """
     absolute_tolerance = None if relative_tolerance is not None else tolerance_hz
     remove_frequencies = [] if remove_frequencies_hz is None else list(remove_frequencies_hz)
     remove_bands = None if remove_bands_hz is None else list(remove_bands_hz)
@@ -219,16 +279,17 @@ def analyze_prepared_segment(
             pencil_parameter=pencil_parameter,
         )
         rayleigh_poles = np.array([mode.pole for mode in analysis.modes])
-        # Fit nuisance modes as well: fitting a targeted pair alone to a step
-        # response confuses the baseline/other oscillations with its amplitude.
+        # Zusätzliche Signalanteile mit anpassen: Ein einzelnes Zielpolpaar
+        # könnte sonst Sprunganteile oder andere Schwingungen mit aufnehmen.
         analysis = matrix_pencil(
             estimation_signal, dt=estimation_dt, model_order=model_order,
             pencil_parameter=pencil_parameter,
         )
     else:
         raise ValueError("eigen_solver must be one of: dense, rayleigh")
-    # Estimate frequencies on the anti-aliased grid, then fit amplitudes jointly
-    # on the ORIGINAL residual. No low-pass filtered measurement is exported.
+    # Pole vom gröberen auf das ursprüngliche Analyseraster übertragen:
+    # z_original = exp(log(z_grob) / factor). Koeffizienten dort neu bestimmen.
+    # Der Tiefpass dient nur der Polschätzung; subtrahiert wird auf den Messwerten.
     poles = np.exp(np.log(np.array([mode.pole for mode in analysis.modes], dtype=complex)) / factor)
     coefficients = estimate_coefficients(prepared.residual, poles)
     analysis = MatrixPencilResult(
@@ -242,6 +303,7 @@ def analyze_prepared_segment(
     fit_reconstruction = analysis.reconstruction if factor == 1 else scipy_signal.resample_poly(
         analysis.reconstruction, 1, factor, padtype="line"
     )
+    # Relativer Anpassungsfehler = ||Modell - Signal|| / ||Signal|| im Schätzraster.
     analysis.relative_fit_error = float(np.linalg.norm(fit_reconstruction - estimation_signal) / max(np.linalg.norm(estimation_signal), 1e-12))
     remove_indices = annotate_modes_for_resonance_bands(analysis.modes, selection_bands, max_damping_ratio)
     if rayleigh_poles is not None:
@@ -259,6 +321,8 @@ def analyze_prepared_segment(
             selected_coefficients,
             len(prepared.uniform_values),
         ).real
+    # Bei schlechter Anpassung oder auffällig großem Abzugsanteil bleibt das
+    # Original erhalten. Diese Grenzen sind Prüfregeln, kein Resonanznachweis.
     fit_error = analysis.relative_fit_error
     rejection = ""
     if fit_error > 0.1:
@@ -289,11 +353,13 @@ def _prepare_estimation_signal(
     bands: list[ResonanceBand],
     analysis_rate_hz: float | None,
 ) -> tuple[np.ndarray, int]:
-    """Reduce oversampling for low-frequency modes without folding high frequencies.
+    """Verringert die Abtastrate für die Polschätzung mit vorgeschaltetem Tiefpass.
 
-    Auto uses at least 100 Hz and ten samples per period at the highest band
-    edge. Zero explicitly disables reduction. Without a band, auto retains the
-    full spectrum. The FFT and exported signal always use the original grid.
+    Automatische Zielrate: mindestens 100 Hz bzw. zehn Messwerte pro Periode
+    an der oberen Bandgrenze, sofern die Eingangsrate dies erlaubt. Ohne Band
+    oder mit analysis_rate_hz=0 bleibt die Rate erhalten. Der Tiefpass verhindert,
+    dass hohe Frequenzen beim Herunterabtasten als niedrige erscheinen (Aliasing).
+    Rückgabe: Signal für die Polschätzung und ganzzahliger Reduktionsfaktor.
     """
     highest_frequency = max((band.high_hz for band in bands), default=0.0)
     input_rate = 1.0 / prepared.dt
@@ -312,6 +378,7 @@ def _prepare_estimation_signal(
 
 
 def _prepare_time_series(time: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Entfernt ungültige Werte, sortiert Zeiten und behält jeden Zeitpunkt einmal."""
     time_array = np.asarray(time, dtype=float)
     value_array = np.asarray(values, dtype=float)
     if time_array.ndim != 1 or value_array.ndim != 1:
@@ -331,6 +398,7 @@ def _prepare_time_series(time: np.ndarray, values: np.ndarray) -> tuple[np.ndarr
 
 
 def _resample_if_needed(time: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Prüft alle Zeitabstände und interpoliert bei Bedarf auf ein gleichmäßiges Raster."""
     diffs = np.diff(time)
     dt = float(np.median(diffs))
     if dt <= 0:
@@ -343,6 +411,7 @@ def _resample_if_needed(time: np.ndarray, values: np.ndarray) -> tuple[np.ndarra
 
 
 def _baseline(values: np.ndarray, detrend: str) -> np.ndarray:
+    """Bestimmt den abzuziehenden Grundanteil: null, Mittelwert oder linearen Trend."""
     if detrend == "none":
         return np.zeros_like(values)
     if detrend == "constant":
@@ -356,6 +425,7 @@ def _rayleigh_initial_frequencies(
     remove_frequencies_hz: list[float],
     remove_bands_hz: list[tuple[float, float]] | None,
 ) -> list[float]:
+    """Leitet Startfrequenzen für Rayleigh aus Zielwerten oder Bandmitten ab."""
     frequencies = [abs(float(frequency)) for frequency in remove_frequencies_hz]
     if remove_bands_hz is not None:
         frequencies.extend(0.5 * (abs(float(low_hz)) + abs(float(high_hz))) for low_hz, high_hz in remove_bands_hz)

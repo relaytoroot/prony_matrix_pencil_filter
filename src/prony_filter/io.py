@@ -1,3 +1,12 @@
+"""Ein- und Ausgabe: Messdateien lesen und Analyseergebnisse als Tabellen speichern.
+
+read_table() lädt eine Datei als pandas-Tabelle (DataFrame).
+extract_time_signal() liefert daraus Zeit- und Signalwerte als NumPy-Felder.
+export_results() schreibt Ergebnisberichte; die Modenschätzung findet in den
+Mathematikmodulen statt. Technische Spalten- und Dateinamen bleiben für
+bestehende Auswerteskripte unverändert.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,6 +30,8 @@ PREFERRED_SIGNAL_COLUMNS = ("P_pos",)
 
 @dataclass(slots=True)
 class ReportTables:
+    """Tabellen für Zusammenfassung, Moden, Signal und optionale Diagnosedaten."""
+
     summary_frame: pd.DataFrame
     modes_frame: pd.DataFrame
     signal_frame: pd.DataFrame
@@ -33,6 +44,7 @@ class ReportTables:
 
 
 def read_table(path: str | Path, sheet_name: str | int | None = 0) -> pd.DataFrame:
+    """Liest Excel oder kommagetrennten Text; standardmäßig das erste Excel-Blatt."""
     file_path = Path(path)
     if not file_path.exists():
         raise FileNotFoundError(file_path)
@@ -45,10 +57,12 @@ def read_table(path: str | Path, sheet_name: str | int | None = 0) -> pd.DataFra
 
 
 def list_columns(frame: pd.DataFrame) -> list[str]:
+    """Liefert die Spaltennamen zur Auswahl im Terminal."""
     return [str(column) for column in frame.columns]
 
 
 def numeric_columns(frame: pd.DataFrame) -> list[str]:
+    """Findet Spalten mit mindestens drei als Zahlen lesbaren Werten."""
     result: list[str] = []
     for column in frame.columns:
         values = pd.to_numeric(frame[column], errors="coerce")
@@ -58,6 +72,7 @@ def numeric_columns(frame: pd.DataFrame) -> list[str]:
 
 
 def guess_time_signal_columns(frame: pd.DataFrame) -> tuple[str, str]:
+    """Sucht Zeit- und Signalspalte und bevorzugt das Leistungssignal P_pos."""
     numeric = numeric_columns(frame)
     if len(numeric) < 2:
         raise ValueError("Could not find at least two numeric columns")
@@ -80,6 +95,11 @@ def extract_time_signal(
     time_column: str | None = None,
     signal_column: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray, str, str]:
+    """Liefert Zeitwerte, Signalwerte und die tatsächlich verwendeten Spaltennamen.
+
+    Bei vorgegebenem Signal wird die passende Zeitspalte gesucht. Nicht als
+    Zahlen lesbare Zellen werden NaN; filtering.py entfernt solche Messpaare.
+    """
     if time_column is None and signal_column is not None:
         time_column = guess_time_column_for_signal(frame, signal_column)
     if time_column is None or signal_column is None:
@@ -95,12 +115,11 @@ def extract_time_signal(
 
 
 def guess_time_column_for_signal(frame: pd.DataFrame, signal_column: str) -> str:
-    """Guess the matching time column for a selected signal column.
+    """Sucht die zum ausgewählten Signal gehörende Zeitspalte.
 
-    Some exported XLS files contain multiple time/signal pairs, for example
-    ``Unnamed: 0`` + ``f`` and ``Unnamed: 2`` + ``P_pos``. In that layout the
-    most useful default is the numeric column immediately left of the selected
-    signal.
+    Die lokalen XLS-Dateien enthalten zwei Paare: ``Unnamed: 0`` + ``f``
+    sowie ``Unnamed: 2`` + ``P_pos``. Deshalb wird zuerst die numerische
+    Spalte direkt links vom ausgewählten Signal als Zeitachse geprüft.
     """
     columns = [str(column) for column in frame.columns]
     if signal_column not in columns:
@@ -116,6 +135,7 @@ def guess_time_column_for_signal(frame: pd.DataFrame, signal_column: str) -> str
 
 
 def build_signal_frame(result: FilterResult) -> pd.DataFrame:
+    """Stellt Zeit, Original, entfernten Anteil und bereinigtes Signal zusammen."""
     return pd.DataFrame(
         {
             "time": result.time,
@@ -127,10 +147,12 @@ def build_signal_frame(result: FilterResult) -> pd.DataFrame:
 
 
 def build_modes_frame(result: FilterResult) -> pd.DataFrame:
+    """Erzeugt die vollständige Diagnosetabelle mit einem Eintrag je Pol."""
     return pd.DataFrame(result.analysis.as_table())
 
 
 def build_resonance_modes_frame(result: FilterResult) -> pd.DataFrame:
+    """Fasst Bandkandidaten für den Bericht zusammen, je konjugiertem Paar einmal."""
     columns = [
         "Frequenz [Hz]",
         "Daempfung [1/s]",
@@ -164,6 +186,7 @@ def build_report_tables(
     fft_result: FFTSpectrumResult | None = None,
     resonance_comparison_rows: Iterable[dict[str, object]] | None = None,
 ) -> ReportTables:
+    """Baut Berichtstabellen und Hinweise aus dem bereits berechneten Ergebnis auf."""
     signal_frame = build_signal_frame(result)
     all_modes_frame = build_modes_frame(result)
     modes_frame = build_resonance_modes_frame(result)
@@ -214,6 +237,11 @@ def export_results(
     resonance_comparison_rows: Iterable[dict[str, object]] | None = None,
     report: ReportTables | None = None,
 ) -> dict[str, Path]:
+    """Speichert result.xlsx und bei debug=True zusätzliche CSV-Diagnosetabellen.
+
+    Die Excel-Blätter Summary, Modes und Signal enthalten Zusammenfassung,
+    Bandkandidaten und Zeitreihen. Die Rückgabe ordnet Ausgaben ihren Pfaden zu.
+    """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     report_tables = report or build_report_tables(

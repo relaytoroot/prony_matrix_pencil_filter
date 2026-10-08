@@ -1,3 +1,11 @@
+"""Ergänzende Frequenzanalyse mittels schneller Fourier-Transformation (FFT).
+
+Das Spektrum zeigt die Verteilung der Signalanteile auf Frequenzstützstellen.
+peaks sind ausgewählte Spektralspitzen, magnitudes die normierten FFT-Beträge.
+Die FFT dient zum Vergleich mit Matrix Pencil; sie rekonstruiert hier keine
+gedämpften Moden und bestimmt das zu entfernende Frequenzband nicht automatisch.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,6 +19,8 @@ from .resonance import ResonanceBand, representative_band_mode
 
 @dataclass(slots=True)
 class FFTPeak:
+    """Spektralspitze mit Rang, Frequenz in Hz und normiertem FFT-Betrag."""
+
     rank: int
     frequency_hz: float
     magnitude: float
@@ -18,6 +28,8 @@ class FFTPeak:
 
 @dataclass(slots=True)
 class FFTSpectrumResult:
+    """Frequenzachse, einseitiges Betragsspektrum und ausgewählte Spitzen."""
+
     frequencies_hz: np.ndarray
     magnitudes: np.ndarray
     peaks: list[FFTPeak]
@@ -50,6 +62,12 @@ def analyze_fft_spectrum(
     peak_count: int = 5,
     min_frequency_hz: float = 0.05,
 ) -> FFTSpectrumResult:
+    """Berechnet das einseitige FFT-Spektrum eines gleichmäßig abgetasteten Signals.
+
+    dt ist der Abtastabstand in Sekunden; peak_count begrenzt die Zahl der
+    ausgegebenen Spitzen oberhalb min_frequency_hz. Die Funktion verwendet
+    die übergebenen Werte direkt, ohne zusätzliches Fenster oder Trendabzug.
+    """
     values = np.asarray(signal, dtype=float)
     if values.ndim != 1:
         raise ValueError("signal must be one-dimensional")
@@ -62,6 +80,8 @@ def analyze_fft_spectrum(
 
     frequencies_hz = np.fft.rfftfreq(len(values), d=dt)
     spectrum = np.fft.rfft(values)
+    # Einseitige Amplitudenskalierung: positive und negative Frequenzen bündeln.
+    # Gleichanteil und gegebenenfalls Nyquist-Stützstelle dürfen nicht verdoppelt werden.
     magnitudes = 2.0 * np.abs(spectrum) / len(values)
     magnitudes[0] *= 0.5
     if len(values) % 2 == 0 and len(magnitudes) > 1:
@@ -98,6 +118,7 @@ def build_resonance_comparison_rows(
     modes: list[Mode],
     fft_result: FFTSpectrumResult | None,
 ) -> list[dict[str, float | int | bool | str | None]]:
+    """Stellt FFT-Spitze, Modenschätzung und Filterentscheidung je Zielband gegenüber."""
     rows: list[dict[str, float | int | bool | str | None]] = []
     peaks = fft_result.peaks if fft_result is not None else []
 

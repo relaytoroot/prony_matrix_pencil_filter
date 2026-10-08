@@ -1,3 +1,11 @@
+"""Fachliche Auswahl: Welche geschätzten Schwingungen dürfen entfernt werden?
+
+Ein Resonanzband ist ein vorgegebener Frequenzbereich, zum Beispiel
+2,2 Hz +/- 20 % = 1,76 bis 2,64 Hz. Die Polschätzung findet vorher in
+matrix_pencil.py statt. Dieses Modul prüft Bandzugehörigkeit und Dämpfung;
+ein Treffer allein beweist noch keine physikalische Resonanz.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,6 +17,12 @@ from .matrix_pencil import Mode
 
 @dataclass(slots=True)
 class ResonanceBand:
+    """Frequenzband mit Untergrenze low_hz und Obergrenze high_hz.
+
+    target_frequency_hz ist ein optionaler Zielwert. source beschreibt,
+    ob das Band direkt oder über eine absolute/relative Toleranz entstand.
+    """
+
     low_hz: float
     high_hz: float
     target_frequency_hz: float | None = None
@@ -37,6 +51,7 @@ class ResonanceBand:
         return 0.5 * (self.low_hz + self.high_hz)
 
     def contains(self, frequency_hz: float) -> bool:
+        """Prüft, ob der Frequenzbetrag innerhalb der Grenzen einschließlich Rand liegt."""
         frequency = abs(float(frequency_hz))
         return self.low_hz <= frequency <= self.high_hz
 
@@ -58,6 +73,11 @@ def build_resonance_bands(
     relative_tolerance: float | None = None,
     remove_bands_hz: Iterable[tuple[float, float]] | None = None,
 ) -> list[ResonanceBand]:
+    """Erstellt Frequenzbänder aus Zielwerten mit Toleranz oder direkten Grenzen.
+
+    Absolute Toleranz: Zielwert +/- tolerance_hz.
+    Relative Toleranz: Zielwert +/- Zielwert * relative_tolerance.
+    """
     if relative_tolerance is not None and relative_tolerance < 0:
         raise ValueError("relative_tolerance must be non-negative")
     if tolerance_hz is not None and tolerance_hz < 0:
@@ -107,6 +127,13 @@ def build_resonance_bands(
 def annotate_modes_for_resonance_bands(
     modes: list[Mode], bands: list[ResonanceBand], max_damping_ratio: float | None = None,
 ) -> list[int]:
+    """Markiert geeignete Moden und liefert ihre Indizes zur Rekonstruktion zurück.
+
+    Die übergebenen Mode-Objekte werden um Bandauswahl und Entscheidungsgrund
+    ergänzt. Wachsende oder zu stark gedämpfte Moden bleiben im Signal.
+    selection_reason enthält den Diagnosegrund, removed die Entscheidung.
+    Die Qualitätsprüfung in filtering.py kann die Auswahl noch zurücknehmen.
+    """
     if max_damping_ratio is not None and (not math.isfinite(max_damping_ratio) or not 0 < max_damping_ratio <= 1):
         raise ValueError("max_damping_ratio must be in (0, 1]")
     if not bands:
@@ -138,8 +165,8 @@ def annotate_modes_for_resonance_bands(
         mode.distance_to_target_hz = nearest_band.distance_to_target_hz(mode.frequency_hz)
         mode.removed = matching_band is not None
         mode.selection_reason = _selection_reason(mode, nearest_band, removed=mode.removed)
-        # Only remove damped (or numerically undamped) oscillations. An in-band
-        # growing fit is evidence of a model/window mismatch, not a safe filter.
+        # Nur abklingende oder näherungsweise ungedämpfte Anteile entfernen.
+        # Wachstum im Zielband kann auf ein unpassendes Modell oder Fenster hinweisen.
         if mode.removed and mode.damping > 1e-8:
             mode.removed = False
             mode.selection_reason = "kept: growing mode; change analysis window or model order"
@@ -153,16 +180,22 @@ def annotate_modes_for_resonance_bands(
 
 
 def physical_modes(modes: list[Mode]) -> list[Mode]:
-    """One representative per conjugate pair; real poles are retained."""
+    """Wählt für Berichte einen Vertreter je konjugiertem Paar; reelle Pole bleiben.
+
+    Für die Rekonstruktion einer reellen Schwingung werden weiterhin beide
+    Partner benötigt. Hier wird nur die doppelte Darstellung vermieden.
+    """
     return [mode for mode in modes if mode.pole.imag >= -1e-12]
 
 
 def representative_band_mode(modes: list[Mode], band: ResonanceBand) -> Mode | None:
+    """Wählt einen aussagekräftigen Vertreter im Band für die Ergebnisdarstellung."""
     candidates = [mode for mode in physical_modes(modes) if band.contains(mode.frequency_hz)]
     if not candidates:
         return None
-    # Prefer accepted modes and sustained oscillatory energy after one period.
-    # A large, rapidly decaying step transient must not dominate the report.
+    # Zugelassene Moden bevorzugen; danach zählt die Hüllkurvenamplitude nach
+    # einer Periode. Ein großer, rasch abklingender Sprunganteil soll den
+    # Bericht nicht gegenüber einer anhaltenden Schwingung dominieren.
     def score(mode: Mode) -> tuple[bool, float]:
         delay = 1.0 / max(mode.frequency_hz, 1e-12)
         log_amplitude = math.log(max(mode.oscillation_amplitude, 1e-300))
@@ -171,6 +204,7 @@ def representative_band_mode(modes: list[Mode], band: ResonanceBand) -> Mode | N
 
 
 def modes_in_resonance_bands(modes: list[Mode], bands: list[ResonanceBand]) -> list[Mode]:
+    """Liefert alle Bandkandidaten, unabhängig von ihrer späteren Entfernung."""
     if not bands:
         return []
     return [mode for mode in modes if any(band.contains(mode.frequency_hz) for band in bands)]

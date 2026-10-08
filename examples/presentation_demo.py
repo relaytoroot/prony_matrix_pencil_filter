@@ -1,6 +1,11 @@
-r"""Reproducible demonstration on both locally supplied step measurements.
+"""Vorführbeispiel: beide lokalen Sprungmessungen einlesen, auswerten und speichern.
 
-Run from the project: .\.venv\Scripts\python.exe examples\presentation_demo.py
+In Git Bash aus dem Projektordner starten:
+    ./.venv/Scripts/python.exe examples/presentation_demo.py
+
+Eingabe: die beiden XLS-Dateien im Ordner data/, jeweils die Leistung P_pos
+mit ihrer zugehörigen Zeitspalte. Ausgabe: Excel, Diagramme und Diagnosetabellen
+unter outputs/presentation_demo/positive/ bzw. negative/ sowie summary.json.
 """
 from pathlib import Path
 import json
@@ -19,7 +24,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def late_band_energy(time, values, dt):
-    """Fixed 4–7 s evaluation, linear detrend and Hann window for BOTH signals."""
+    """Vergleicht die spektrale Bandenergie im festen Abschnitt von 4 bis 7 Sekunden.
+
+    Original und bereinigtes Signal erhalten dieselbe lineare Trendbereinigung
+    und dasselbe Hann-Fenster. Anschließend werden die quadrierten FFT-Beträge
+    im Band 1,76 bis 2,64 Hz addiert. Dies ist eine spektrale Vergleichsgröße,
+    keine physikalische Energie in Joule und kein Nachweis einer Resonanzursache.
+    """
     selected = values[(time >= 4.0) & (time <= 7.0)]
     spectrum = np.fft.rfft(detrend(selected) * windows.hann(len(selected), sym=False))
     frequencies = np.fft.rfftfreq(len(selected), dt)
@@ -27,6 +38,7 @@ def late_band_energy(time, values, dt):
 
 
 def main():
+    """Führt den gesamten Ablauf für positiven und negativen Leistungssprung aus."""
     summary = []
     for name, filename in [
         ("positive", "Frequenz_Leistungs_Pendelung.XLS"),
@@ -34,19 +46,24 @@ def main():
     ]:
         source = ROOT / "data" / filename
         output = ROOT / "outputs" / "presentation_demo" / name
-        # 1. Select the power signal and its matching time axis.
+        # 1. Leistungssignal P_pos und die zugehörige Zeitachse aus Excel einlesen.
         time, values, _, signal_column = extract_time_signal(read_table(source), signal_column="P_pos")
-        # 2. Estimate damped modes, select the requested band and subtract them.
+        # 2. Ab t0 = 1 s analysieren. 2,2 Hz +/- 20 % ergibt 1,76 bis 2,64 Hz.
+        # Modellordnung 12 erlaubt bis zu zwölf komplexe Exponentialanteile.
+        # Geeignete Moden im Band rekonstruieren und vom Original abziehen.
         result = filter_known_modes(time, values, t0=1.0, remove_frequencies_hz=[2.2],
                                     relative_tolerance=0.2, model_order=12)
-        # 3. FFT is a comparison, not the filter.
+        # 3. FFT-Spektrum des Restsignals als zusätzlichen Frequenzvergleich berechnen.
         fft = analyze_fft_spectrum(result.residual, result.analysis.dt, peak_count=50)
         comparison = build_resonance_comparison_rows(result.selection_bands, result.modes, fft)
-        # 4. Export original, removed and filtered values on the measurement grid.
+        # 4. Original, entfernten Anteil und bereinigtes Signal als Tabellen und
+        # Diagramm auf den Messzeitpunkten ausgeben.
         export_results(result, output, source, signal_column, 1.0, fft_result=fft,
                        resonance_comparison_rows=comparison, debug=True)
         save_comparison_plot(result, output / "comparison_plot.png", signal_column)
         mode = representative_band_mode(result.modes, result.selection_bands[0])
+        # 5. Abschwächung im Band messen und zwei Eigenschaften kontrollieren:
+        # Vor dem Sprung bleibt das Signal gleich; Original - Abzug = Ergebnis.
         before = late_band_energy(result.time, result.original, result.analysis.dt)
         after = late_band_energy(result.time, result.filtered, result.analysis.dt)
         summary.append({

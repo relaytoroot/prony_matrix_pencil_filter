@@ -1,3 +1,8 @@
+"""Einfaches Vorführbeispiel mit künstlichen Messwerten, ohne Excel-Eingabedatei.
+
+Start in Git Bash: ./.venv/Scripts/python.exe examples/run_example.py
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,11 +17,14 @@ from prony_filter.spectral import analyze_fft_spectrum, build_resonance_comparis
 
 
 def main() -> int:
+    """Erzeugt einen Leistungssprung mit bekannter Schwingung und filtert diese."""
     dt = 0.01
     time = np.arange(0, 12, dt)
     t0 = 1.0
+    # tau ist die seit dem Sprung vergangene Zeit; davor beginnt noch keine Schwingung.
     tau = np.maximum(0.0, time - t0)
     base = 100.0 + np.where(time >= t0, 20.0, 0.0)
+    # Referenz: A = 3, d = -0,25 pro Sekunde, f = 2,24 Hz, Anfangsphase = 0,2 rad.
     resonance = 3.0 * np.exp(-0.25 * tau) * np.cos(2 * np.pi * 2.24 * tau + 0.2)
     signal = base + np.where(time >= t0, resonance, 0.0)
 
@@ -45,7 +53,7 @@ def main() -> int:
     save_comparison_plot(result, output_dir / "comparison_plot.png", signal_label="P_pos")
     save_fft_plot(fft_result, output_dir / "fft_plot.png")
     print(pd.DataFrame(resonance_comparison).to_string(index=False))
-    print(f"Example written to {output_dir}")
+    print(f"Beispielergebnisse gespeichert unter {output_dir}")
     return 0
 
 
