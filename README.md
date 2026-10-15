@@ -126,7 +126,7 @@ python -m venv .venv
 
 ## Mitgelieferte Unterlagen
 
-Die ZIP-Unterlagen liegen lokal unter `data/`. Dieser Ordner ist absichtlich in Git ignoriert, damit Messdaten und PDFs nicht versehentlich auf GitHub landen.
+Die beiden unten aufgeführten XLS-Messdateien liegen unter `data/` und sind im Repository enthalten. Weitere lokale Unterlagen, etwa PDFs und Aufgabenbeschreibungen, bleiben über `.gitignore` ausgeschlossen. Dadurch lässt sich die Analyse nach dem Klonen direkt mit den mitgelieferten Messdaten ausführen.
 
 Erkannte XLS-Struktur:
 

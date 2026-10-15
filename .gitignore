@@ -11,9 +11,11 @@ build/
 dist/
 *.egg-info/
 
-# Local input data and generated results
+# Lokale Unterlagen und Ergebnisse; die beiden Messdateien werden versioniert.
 data/*
 !data/.gitkeep
+!data/Frequenz_Leistungs_Pendelung.XLS
+!data/Frequenz_Leistungs_Pendelung_negativer_Sprung.XLS
 outputs/*
 !outputs/.gitkeep
 validation_report/

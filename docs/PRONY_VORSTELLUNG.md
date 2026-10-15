@@ -58,7 +58,7 @@ Die zentrale SVD-Reduktion ist `S_r^-1 @ U_r.H @ Y1 @ V_r`. Das Ergebnis hat nur
 
 ## Reproduzierbare Vorstellung
 
-Im Projektordner ausführen (die beiden lokalen XLS-Dateien müssen in `data/` liegen):
+Im Projektordner ausführen (die beiden XLS-Messdateien werden unter `data/` mitgeliefert):
 
 ```powershell
 $env:OPENBLAS_NUM_THREADS = '1'
