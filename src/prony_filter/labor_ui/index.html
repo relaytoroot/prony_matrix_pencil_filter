@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#192238">
+  <title>Matrix-Pencil-Labor</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="bar"><div class="bar-inner">
+    <span class="signature" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+    <span class="brand">Schwingungslabor</span>
+    <span class="divider"></span><span class="bar-topic">Prony-Analyse</span>
+    <span id="run-status" class="status busy" role="status">Versuche laden …</span>
+  </div></header>
+  <main>
+    <div class="intro">
+      <div><h1>Matrix-Pencil-Labor</h1>
+        <p>Erzeuge eigene Schwingungen oder untersuche eine Messreihe.</p></div>
+    </div>
+    <section class="experiment" aria-labelledby="experiment-label">
+      <div class="source-field">
+        <label id="experiment-label" for="source">Versuch auswählen <span id="catalog-count"></span></label>
+        <div class="source-controls">
+          <select id="source" disabled><option>Versuche werden geladen …</option></select>
+          <div class="source-nav" role="group" aria-label="Versuch wechseln">
+            <button type="button" id="previous-source" disabled title="Vorheriger Versuch" aria-label="Vorheriger Versuch">‹</button>
+            <button type="button" id="next-source" disabled title="Nächster Versuch" aria-label="Nächster Versuch">›</button>
+          </div>
+        </div>
+      </div>
+      <div id="experiment-info" class="experiment-info" hidden>
+        <p id="experiment-description"></p>
+        <details id="provenance"><summary>Quelle und Datenaufbereitung</summary>
+          <dl id="source-facts"></dl>
+        </details>
+      </div>
+      <button id="retry-catalog" type="button" hidden>Versuche erneut laden</button>
+    </section>
+    <section id="learning" class="learning" aria-labelledby="learning-heading" hidden>
+      <div class="learning-options">
+        <h2 id="learning-heading">Lernversuch starten</h2>
+        <div class="switch" role="group" aria-label="Lernversuch">
+          <button type="button" id="preset-single" aria-pressed="true">Eine Schwingung</button>
+          <button type="button" id="preset-pair" aria-pressed="false">Zwei trennen</button>
+          <button type="button" id="preset-noisy" aria-pressed="false">Mit Rauschen</button>
+        </div>
+      </div>
+      <div class="learning-instructions">
+        <p id="learning-task"></p>
+        <button id="open-calculation" type="button" aria-controls="calculation">Rechenweg mit Zahlen ansehen ↓</button>
+      </div>
+    </section>
+    <div class="workspace">
+      <div class="output">
+        <section class="card viewer" aria-labelledby="chart-heading">
+          <div class="card-title plot-title"><h2 id="chart-heading">Signalverlauf</h2>
+            <div class="switch" role="group" aria-label="Diagrammansicht">
+              <button type="button" id="time-view" aria-pressed="true">Zeitverlauf</button>
+              <button type="button" id="mode-view" aria-pressed="false">Modenspektrum</button>
+            </div>
+          </div>
+          <div id="chart-wrap" class="chart-wrap">
+            <canvas id="chart" tabindex="0" aria-label="Signalverlauf. Mit den Pfeiltasten Messpunkte ablesen."></canvas>
+            <div id="plot-tooltip" class="tooltip" hidden></div>
+            <div id="plot-message" class="plot-message" role="status">Versuche werden geladen …</div>
+          </div>
+          <div id="time-controls" class="time-controls">
+            <label for="time-zoom">Zeitausschnitt</label>
+            <select id="time-zoom" title="Ansicht des Signals vergrößern">
+              <option value="all">Gesamte Dauer</option>
+              <option value="half">Halbe Dauer</option>
+              <option value="cycles">10 Perioden der Zielfrequenz</option>
+            </select>
+            <label id="pan-label" for="time-pan" hidden>Verschieben</label>
+            <input type="range" id="time-pan" min="0" max="1000" value="0" hidden>
+          </div>
+          <div id="curve-controls" class="legend" role="group" aria-label="Sichtbare Kurven">
+            <button data-curve="signal" aria-pressed="true"><i></i>Eingangssignal</button>
+            <button data-curve="filtered" aria-pressed="true"><i></i>Gefiltertes Signal</button>
+            <button data-curve="model" aria-pressed="false"><i></i>Modell</button>
+            <button data-curve="removed" aria-pressed="false"><i></i>Entfernter Anteil</button>
+          </div>
+          <div id="spectral-key" class="legend spectral-key" hidden><span><i></i>Geschätzte Amplitude</span><span><i></i>Zielband</span></div>
+          <div class="metrics">
+            <div><span>Abtastrate der Eingabe</span><strong id="sample-rate">–</strong></div>
+            <div><span>Rate der Polschätzung</span><strong id="analysis-rate">–</strong></div>
+            <div><span>Relativer Modellfehler</span><strong id="fit-error">–</strong></div>
+          </div>
+        </section>
+        <p id="analysis-note" class="analysis-note" role="status" hidden></p>
+        <section class="card results" aria-labelledby="modes-heading">
+          <div class="card-title"><h2 id="modes-heading">Erkannte Moden</h2><span id="mode-count" class="count">–</span></div>
+          <p id="comparison" class="comparison"></p>
+          <div class="table-scroll"><table aria-label="Erkannte Schwingungen">
+            <thead><tr><th scope="col">Frequenz</th><th scope="col">Abklingrate</th><th scope="col" id="amplitude-label">Amplitude</th><th scope="col">Filterung</th></tr></thead>
+            <tbody id="mode-rows"></tbody>
+          </table></div>
+          <details><summary>Wie lese ich diese Werte?</summary>
+            <dl class="glossary">
+              <dt>Frequenz</dt><dd>Die Zahl der Schwingungen pro Sekunde, angegeben in Hertz (Hz).</dd>
+              <dt>Abklingrate</dt><dd>Eine positive Rate bedeutet, dass die Schwingung schwächer wird. Bei 1 pro Sekunde sinkt ihre Amplitude in einer Sekunde auf rund 37 %.</dd>
+              <dt>Amplitude</dt><dd>Die geschätzte Stärke der Mode zu Beginn des ausgewerteten Abschnitts.</dd>
+              <dt>Modellfehler</dt><dd>Die Abweichung zwischen Modell und analysiertem Signal, gemessen auf dem Raster der Polschätzung. Je kleiner der Wert, desto genauer beschreibt das Modell diesen Abschnitt.</dd>
+            </dl>
+          </details>
+          <details id="calculation"><summary>Rechenweg mit Zahlen ansehen</summary><ol id="steps"></ol></details>
+        </section>
+      </div>
+      <aside class="card parameters" aria-labelledby="parameter-heading" inert>
+        <div class="card-title"><h2 id="parameter-heading">Parameter</h2><button id="reset" type="button" title="Standardwerte für diese Datenquelle wiederherstellen">Zurücksetzen</button></div>
+        <section id="synthesis" class="param-section" aria-labelledby="synth-heading">
+          <h3 id="synth-heading">Signalgenerator</h3>
+          <div class="switch oscillator" role="group" aria-label="Schwingung einstellen"><button type="button" id="osc-1" aria-pressed="true">Schwingung 1</button><button type="button" id="osc-2" aria-pressed="false">Schwingung 2</button></div>
+          <div id="osc-panel-1"></div><div id="osc-panel-2" hidden></div>
+          <div id="noise-panel"></div>
+        </section>
+        <section class="param-section fit-settings" aria-labelledby="fit-heading">
+          <h3 id="fit-heading">Analyse und Filter</h3>
+          <div class="inline-field"><label for="order">Modellordnung</label><select id="order"><option>2</option><option selected>4</option><option>6</option><option>8</option><option>10</option><option>12</option></select></div>
+          <p class="field-hint">Eine gedämpfte Sinusschwingung benötigt zwei Pole. Die Ordnung begrenzt, wie viele Pole das Modell verwenden darf.</p>
+          <div class="number-grid">
+            <label for="target">Zielfrequenz<span class="number-box"><input type="number" inputmode="decimal" id="target" step="any" required><span>Hz</span></span></label>
+            <label for="tolerance">Toleranz ±<span class="number-box"><input type="number" inputmode="decimal" id="tolerance" step="any" required><span>Hz</span></span></label>
+          </div>
+          <div class="band"><span class="band-swatch"></span><span>Zielband</span><b id="band">–</b></div>
+          <p class="field-hint">Im Zielband prüft das Labor, welche Mode es vom Eingangssignal abziehen kann.</p>
+        </section>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

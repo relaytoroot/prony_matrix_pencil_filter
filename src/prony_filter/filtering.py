@@ -91,6 +91,7 @@ class SegmentAnalysisResult:
     remove_indices: list[int]
     removed_component_uniform: np.ndarray
     filtered_uniform: np.ndarray
+    estimation_preview: tuple[float, ...] = ()
 
 
 def filter_known_modes(
@@ -345,6 +346,7 @@ def analyze_prepared_segment(
         remove_indices=remove_indices,
         removed_component_uniform=removed_component_uniform,
         filtered_uniform=filtered_uniform,
+        estimation_preview=tuple(float(v) for v in estimation_signal[:4]),
     )
 
 

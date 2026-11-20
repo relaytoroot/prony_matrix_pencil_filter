@@ -4,6 +4,47 @@ Prototype zur Analyse und Filterung von Frequenz- und Leistungspendelungen nach 
 
 Ziel ist eine bereinigte Zeitreihe aus `Y(t)`, nachdem bekannte gedämpfte Schwingungen erkannt, rekonstruiert und vom Signal abgezogen wurden.
 
+## Interaktives Matrix-Pencil-Labor
+
+Unter Windows öffnet ein Doppelklick auf **Matrix-Pencil-Labor.cmd** das Labor.
+Alternativ im Projektordner mit der installierten Umgebung in Git Bash starten:
+
+```bash
+./.venv/Scripts/python.exe -m prony_filter.labor
+```
+
+Das Labor öffnet sich im Browser und berechnet die Ergebnisse lokal. Mit
+**Strg+C** im Terminal beendest du den Server. Falls der Standardport 8791
+belegt ist, wählt `--port 0` einen freien Port.
+
+Mit **Eine Schwingung** beginnt das Labor bei 3 Hz. Verändere die Frequenz im
+Generator und beobachte, welcher Wert unter „Erkannte Moden“ erscheint. Im
+**Rechenweg mit Zahlen** siehst du, wie dieselben vier aufbereiteten Messwerte
+versetzt in zwei Hankelmatrizen eingehen und wie aus einem Pol eine Frequenz
+wird. **Zwei trennen** und **Mit Rauschen** bieten weitere Aufgaben. Die
+Zielfrequenz legt fest, welche der geschätzten Schwingungen für den Abzug
+infrage kommt. Die Eingangsdaten bestimmen die geschätzten Frequenzen.
+
+Der Versuchskatalog enthält außerdem 17 lokal mitgelieferte Ausschnitte aus
+öffentlichen Messreihen. Die zugehörige CSV lässt sich im Steckbrief herunterladen.
+Die Werkzeuge funktionieren nach der Installation offline.
+
+| Messung | Was lässt sich vergleichen? |
+| --- | --- |
+| [Britische Netzfrequenz (NESO)](https://www.neso.energy/data-portal/system-frequency-data) | Sieben dokumentierte Netzereignisse und ein Vergleichsfenster aus dem Netzbetrieb. Ein Messwert pro Sekunde erfasst die langsame Änderung der Netzfrequenz. |
+| [Kragbalken (ARTS Laboratory)](https://github.com/ARTS-Laboratory/dataset-free-vibration-of-cantilever-beam) | Zwei Abschnitte derselben Aufnahme vor und nach dem Ablösen einer Masse. |
+| [Balkenversuche (Politecnico di Torino)](https://zenodo.org/records/19205934) | Anregung mit Frequenzsweep, festem Sinuston und rosa Rauschen. |
+| [Instrumentenaufnahmen (Versilian Studios)](https://versilian-studios.com/vsco-community/) | Marimba, Harfe, Glockenspiel und Querflöte. Der Zeitzoom macht einzelne Perioden sichtbar. |
+
+Für jeden Ausschnitt stehen Quelle, Lizenz, Kanal und Bearbeitung unter
+**Quelle und Datenaufbereitung**. Für die NESO-Daten gilt die Quellenangabe
+„Supported by National Energy SO Open Data“.
+
+Für die beiden Frequenzsprünge liest das Labor `P_pos` aus den mitgelieferten
+XLS-Dateien und analysiert die Leistungsantwort ab 1 s. Die Abklingrate im
+Labor ist als positives `d` in `exp(-d*t)` angegeben. Ein negativer Wert
+kennzeichnet eine wachsende Mode.
+
 ## Fachlicher Hintergrund
 
 Nach einem Sprungtest kann die Antwort des Systems näherungsweise als Summe gedämpfter Schwingungen modelliert werden:

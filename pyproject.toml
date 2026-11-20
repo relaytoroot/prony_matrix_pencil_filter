@@ -27,7 +27,14 @@ dev = [
 
 [project.scripts]
 prony-filter = "prony_filter.cli:main"
+prony-labor = "prony_filter.labor:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+prony_filter = ["labor_ui/*.html", "labor_ui/*.css", "labor_ui/*.js", "labor_data/*/*.csv", "labor_data/*/manifest.json"]
+
+[tool.setuptools.data-files]
+"share/prony-filter" = ["data/Frequenz_Leistungs_Pendelung.XLS", "data/Frequenz_Leistungs_Pendelung_negativer_Sprung.XLS"]
 

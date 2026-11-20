@@ -1,0 +1,22 @@
+[
+  {
+    "id": "netz-januar",
+    "title": "Netzfrequenz zum Jahreswechsel",
+    "group": "Stromnetz · Vergleich",
+    "unit": "Hz",
+    "signalLabel": "Netzfrequenz",
+    "sampleRate": 1,
+    "t0": 0,
+    "order": 10,
+    "target": 0.012,
+    "tolerance": 0.004,
+    "description": "Sechs Minuten aus dem britischen Netzbetrieb am Neujahrsmorgen. Untersuche, wie langsam die Frequenz um den Nennwert von 50 Hz schwankt.",
+    "processing": "01.01.2024, 00:00:00 bis 00:05:59 UTC. Die 360 Werte der Originalspalte f sind unverändert; die Zeit zählt in Sekunden ab Mitternacht.",
+    "sourceName": "National Energy System Operator · Januar 2024",
+    "sourceUrl": "https://www.neso.energy/data-portal/system-frequency-data/january_2024_-_historic_frequency_data",
+    "attribution": "Supported by National Energy SO Open Data",
+    "license": "National Energy SO Open Data Licence v1.0",
+    "licenseUrl": "https://www.neso.energy/data-portal/neso-open-licence",
+    "file": "neujahr.csv"
+  }
+]
